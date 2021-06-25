@@ -14,77 +14,91 @@ import numpy as np
 cmap = plt.get_cmap('viridis')
 eps = np.spacing(1)
 
-# Variables
-L = 1000  # Number of intervals
-mi = np.linspace(0, 8, L)  # Methylation levels
-ci = np.logspace(-3, 3, L)  # Ligand levels(LOG SPACE)
-dm = np.mean(np.diff(mi))  # Differences between methylation levels
-dc = np.mean(np.diff(ci))  # Differences between ligand levels(note: intervals in c are not constant as defined in log space!)
+# Methylation and ligand levels
+L = 1000  # Number of levels
+mi = np.linspace(8, 0, L)  # Methylation levels
+ci = np.logspace(-3, 3, L)  # Ligand levels (LOG SPACE)
+dm = np.mean(np.diff(mi[::-1]))  # Differences between methylation levels
+dc = np.mean(np.diff(ci))  # Differences between ligand levels (note: intervals in c are not constant due to log space)
 
-[c, m] = np.meshgrid(ci, np.flip(mi))  # Mesh grid of ligand and methylation levels
+[c, m] = np.meshgrid(ci, mi)  # Mesh grid of ligand and methylation levels
 
 # Fitness function - estimated
 
-# Parameters - Micali table S1
-N = 5  # Cooperative receptor number(paper uses 13, range[5; 13])
-va = 1 / 3  # Fraction of Tar receptors(paper uses 1 / 3)
-vs = 2 / 3  # Fraction of Tsr receptors(paper uses 1 / 3)
-Kaon = 0.5  # Active receptors dissociation constant Tar(mM, paper uses 1.0)
-Kson = 100000  # Active receptors dissociation constant Tsr(mM, paper uses 1E6)
-Kaoff = 0.02  # Inactive receptors dissociation constant Tar(mM, paper uses 0.03)
-Ksoff = 100  # Inactive receptors dissociation constant Tsr(mM, paper uses 100)
-k = 1
+# Parameters (Micali table S1)
+N = 5  # Cooperative receptor number (paper uses 13, range[5; 13])
+va = 1 / 3  # Fraction of Tar receptors (paper uses 1 / 3)
+vs = 2 / 3  # Fraction of Tsr receptors (paper uses 1 / 3)
+Kaon = 0.5  # Active receptors dissociation constant Tar (mM, paper uses 1.0)
+Kson = 100000  # Active receptors dissociation constant Tsr (mM, paper uses 1E6)
+Kaoff = 0.02  # Inactive receptors dissociation constant Tar (mM, paper uses 0.03)
+Ksoff = 100  # Inactive receptors dissociation constant Tsr (mM, paper uses 100)
+k = 1  # TODO: what is this? motor dissociation constant?
+YT = 9.7  # Total concentration of CheY (muM, paper uses 7.9, range [6; 9.7])
 
-nu = 0.01
-YT = 9.7  # muM
-mT = 1e4
-kyp = 100  # muM ^ {-1} s ^ {-1}
-kym = nu * kyp
-kzp = 30  # s ^ {-1}
-kzm = nu * kzp
-kRp = 0.0069  # s ^ {-1}
-kRm = nu * kRp
-kBp = 0.12  # s ^ {-1}
-kBm = nu * kBp
+# Phosphorylation rate parameters (Micali equation S28)
+nu = 0.01  # TODO: where is this from and what is it?
 
+kyp = 100  # Rate constant k_y^+ for reaction CheY + ATP --> CheY_p + ADP (muM^{-1}s^{-1})
+kym = nu * kyp  # Rate constant k_y^- for reaction CheY_p + ADP --> CheY + ATP (muM^{-1}s^{-1})
+
+kzp = 30  # Rate constant k_z^+ for reaction CheY_p + ADP --> CheY + ADP + Pi (s^{-1})
+kzm = nu * kzp  # Rate constant k_z^- for reaction CheY + ADP + Pi --> CheY_p + ADP (s^{-1})
+
+# Methylation rate parameters (Micali equation S29)
+kRp = 0.0069  # Rate constant k_R^+ for reaction [m]_0 + SAM --> [m + 1]_0 + SAH (s^{-1})
+kRm = nu * kRp  # Rate constant k_R^- for reaction [m + 1]_0 + SAH --> [m]_0 + SAM (s^{-1})
+kBp = 0.12  # Rate constant k_B^+ for reaction [m + 1]_1 + H2O --> [m]_1 + CH3OH (s^{-1})
+kBm = nu * kBp  # Rate constant k_B^+ for reaction [m]_1 + CH3OH --> [m + 1]_1 + H2O (s^{-1})
+mT = 1e4  # Total number of methylation sites
+
+# Ligand (local) gradient steepness
 rel_grad = 0.75
 
 # Methylation free energy (Monod-Wyman-Changeux (MWC) model, Clausznitzer equation 5)
 mE = 1 - 0.5 * m
 
-# Free energy difference of on/off states of receptor complex (Monod-Wyman-Changeux (MWC) model, Clausznitzer equation 5)
-dF = N * (
-        mE
-        + va * np.log((1 + c / Kaoff) / (1 + c / Kaon))
-        + vs * np.log((1 + c / Ksoff) / (1 + c / Kson))
+# Free energy difference of on/off states of receptor complex (MWC model, Clausznitzer equation 5)
+dF = N * (  # cooperative receptor number
+        mE +  # methylation energy
+        va * np.log((1 + c / Kaoff) / (1 + c / Kaon)) +  # Tar receptor
+        vs * np.log((1 + c / Ksoff) / (1 + c / Kson))  # Tsr receptor
 )
 
-# Receptor activity (Monod-Wyman-Changeux (MWC) model, Clausznitzer equation 5)
+# Receptor activity (MWC model, Clausznitzer equation 5)
 A = 1 / (1 + np.exp(dF))
 
-# Drift velocity
-vd = k * A * (1 - A) * N * (va * (c / (c + Kaoff) - c / (c + Kaon)) + vs * (c / (c + Ksoff) - c / (c + Kson))) * rel_grad
+# Derivative of free energy with respect to ligand concentration (Micali equation 1 and S20)
+dFdc = N * (  # cooperative receptor number
+        va * (c / (c + Kaoff) - c / (c + Kaon)) +  # Tar receptor
+        vs * (c / (c + Ksoff) - c / (c + Kson))  # Tsr receptor
+)
+
+# Drift velocity (Micali equation 1) TODO: why k * A instead of function K(<A>)?
+vd = k * A * (1 - A) * dFdc * rel_grad
 
 # Entropy production from phosphorylation and methylation
-Yp = (kyp * A + kzm) * YT / ((kyp + kym) * A + kzp + kzm)
-dSdty = (kyp * (YT - Yp) - kym * Yp) * A * np.log((kyp * (YT - Yp)) / (kym * Yp)) + (kzp * Yp - kzm * (YT - Yp)) * np.log((kzp * Yp) / (kzm * (YT - Yp)))
-dSdtm = (kRp - kRm) * (1 - A) * mT * np.log(kRp / kRm) + (kBp - kBm) * A**3 * mT * np.log(kBp / kBm)
-EP = (dSdty + dSdtm) / 1000  # Make values smaller to work
+Yp = (kyp * A + kzm) * YT / ((kyp + kym) * A + kzp + kzm)  # TODO: Micali equation S4???
+dSdty = (kyp * (YT - Yp) - kym * Yp) * A * np.log((kyp * (YT - Yp)) / (kym * Yp)) + \
+        (kzp * Yp - kzm * (YT - Yp)) * np.log((kzp * Yp) / (kzm * (YT - Yp)))  # Micali equation S28 without Boltzmann constant kb
+dSdtm = (kRp - kRm) * (1 - A) * mT * np.log(kRp / kRm) + \
+        (kBp - kBm) * A**3 * mT * np.log(kBp / kBm)  # Micali equation S29 without Boltzmann constant kb
+EP = (dSdty + dSdtm) / 1000  # Micali equation S29 (divide by 1000 to use smaller values)
 
 # Choose an output(drift vd or entropy production EP)
 # output = EP
 output = vd
 
 # Input - output curve of methylation and ligand concentration vs output
-"""
-plt.contourf(np.log(c), m, output, 64, cmap=cmap)
+
+plt.contourf(np.log(c), m, output, levels=64, cmap=cmap)
 plt.colorbar()
 maxi = np.argmax(output, axis=0)  # Index in each column corresponding to maximum
-plt.plot(np.log(ci), m[maxi, :], color='red')
+plt.plot(np.log(ci), mi[maxi], color='red', label='max')
+plt.legend(loc='upper left')
 plt.xlabel('Ligand $c_0$')
 plt.ylabel('Methylation $m$')
 plt.show()
-"""
 
 # Distribution of external states of c
 r = 0.1  # 2;
@@ -104,6 +118,7 @@ def Eqn5(Pm, lam):
 # Iterate mutual information algorithm
 
 # TODO: why are the numbers slightly different from Matlab? Is it just differences in numerical precision?
+# TODO: should 0 information have 0 drift instead of 0.04 drift?
 
 iimax = int(2e4)  # 10
 etol = 1e-1  # -4, -5
@@ -132,8 +147,6 @@ for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
             print(outmax[0])
             plt.plot(Imin, outmax, 'x')
             break
-
-breakpoint()
 
 plt.ylabel('Mean output')
 plt.xlabel('Information $I(m; c_0)$ (bits)')
