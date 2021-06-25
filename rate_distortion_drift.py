@@ -33,11 +33,11 @@ Kaon = 0.5  # Active receptors dissociation constant Tar (mM, paper uses 1.0)
 Kson = 100000  # Active receptors dissociation constant Tsr (mM, paper uses 1E6)
 Kaoff = 0.02  # Inactive receptors dissociation constant Tar (mM, paper uses 0.03)
 Ksoff = 100  # Inactive receptors dissociation constant Tsr (mM, paper uses 100)
-k = 1  # TODO: what is this? motor dissociation constant?
 YT = 9.7  # Total concentration of CheY (muM, paper uses 7.9, range [6; 9.7])
+k = 1  # TODO: what is this? susceptibility? motor dissociation constant?
 
 # Phosphorylation rate parameters (Micali equation S28)
-nu = 0.01  # TODO: where is this from and what is it?
+nu = 0.01  # Proportionality constant between forward and backward rates (paper says << 1)
 
 kyp = 100  # Rate constant k_y^+ for reaction CheY + ATP --> CheY_p + ADP (muM^{-1}s^{-1})
 kym = nu * kyp  # Rate constant k_y^- for reaction CheY_p + ADP --> CheY + ATP (muM^{-1}s^{-1})
@@ -90,7 +90,7 @@ EP = (dSdty + dSdtm) / 1000  # Micali equation S29 (divide by 1000 to use smalle
 output = vd
 
 # Input - output curve of methylation and ligand concentration vs output
-
+"""
 plt.contourf(np.log(c), m, output, levels=64, cmap=cmap)
 plt.colorbar()
 maxi = np.argmax(output, axis=0)  # Index in each column corresponding to maximum
@@ -99,19 +99,21 @@ plt.legend(loc='upper left')
 plt.xlabel('Ligand $c_0$')
 plt.ylabel('Methylation $m$')
 plt.show()
+"""
 
-# Distribution of external states of c
-r = 0.1  # 2;
-Pc = np.exp(-r * c) / np.sum(np.exp(-r * c) * dc, axis=0)  # TODO: is this supposed to be nearly all 0.000999???
+# Probability distribution over external states of ligand concentration
+r = 0.1  # Constant relative ligand gradient (2)
+Pc = np.exp(-r * c) / np.sum(np.exp(-r * c) * dc, axis=0)  # TODO: is this supposed to be nearly all 0.000999??? also is the normalization constant right? why dc or is that to make it an integral? why not use actually diffs rather than mean diff of log space?
+# Pc = np.exp(-r * c) / np.sum(np.exp(-r * c) * dc, keepdims=True, axis=1)  # TODO: check whether this is right and whether dc is needed
 
 # Functions to iterate
 
 
-def Eqn2(Pmc):
+def Eqn2(Pmc: np.ndarray) -> np.ndarray:
     return np.sum(Pmc * Pc * dc, axis=1)  # This should give a vector of Nm by 1
 
 
-def Eqn5(Pm, lam):
+def Eqn5(Pm: np.ndarray, lam: float) -> np.ndarray:
     return np.exp(lam * vd) * Pm / np.sum(Pm * np.exp(lam * vd) * dm, axis=0)  # This should give a matrix of Nm by Nc
 
 
@@ -120,8 +122,8 @@ def Eqn5(Pm, lam):
 # TODO: why are the numbers slightly different from Matlab? Is it just differences in numerical precision?
 # TODO: should 0 information have 0 drift instead of 0.04 drift?
 
-iimax = int(2e4)  # 10
-etol = 1e-1  # -4, -5
+iter_max = int(2e4)  # Maximum number of iterations (10)
+error_tol = 1e-1  # Error tolerance for convergence (-4, -5)
 for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
     print(f'Lambda = {lam:.2f}')
 
@@ -133,15 +135,15 @@ for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
     # 'this is normalised!'
     Pmci = Eqn5(Pmi, lam)  # columns not normalised!!!!
 
-    for ii in range(iimax):
-        # print(ii)
+    for i in range(iter_max):
+        # print(i)
         Pmo = Pmi
         Pmi = Eqn2(Pmci)  # NaN!!!!
         Pmci = Eqn5(Pmi, lam)
         # print(np.linalg.norm(Pmi - Pmo) * dm)
 
-        if np.linalg.norm(Pmi - Pmo) * dm <= etol:
-            print(f'Converged for lambda = {lam:.2f} after {ii + 1} iterations')
+        if np.linalg.norm(Pmi - Pmo) * dm <= error_tol:
+            print(f'Converged for lambda = {lam:.2f} after {i + 1} iterations')
             Imin = np.sum(dc * Pc * np.sum(dm * Pmci * np.log2(eps + Pmci / (eps + Pmi)), axis=0), axis=1)  # Mutual information Eq.1
             outmax = np.sum(dc * Pc * np.sum(dm * Pmci * output, axis=0), axis=1)  # Mean fitness from Eq.4
             print(outmax[0])
