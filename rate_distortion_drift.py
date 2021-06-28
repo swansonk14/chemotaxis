@@ -1,12 +1,17 @@
 """
-Simulation of E. coli drift and mutual information
+Simulation of E. coli drift or entropy production and mutual information.
 
 References:
-    - Micali: Drift and Behavior of E. coli Cells by Micali et al. - Biophysical Journal 2017 (https://www.sciencedirect.com/science/article/pii/S0006349517310755)
-    - Taylor: Information and fitness by Taylor, Tishby, and Bialek - arXiv 2007 (https://arxiv.org/abs/0712.4382)
-    - Clausznitzer: Chemotactic Response and Adaptation Dynamics in Escherichia coli by Clausznitzer et al. - PLOS Computational Biology 2010 (https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1000784)
+    - Micali: Drift and Behavior of E. coli Cells
+              Micali et al., Biophysical Journal, 2017
+              https://www.sciencedirect.com/science/article/pii/S0006349517310755
+    - Taylor: Information and fitness
+              Taylor et al., arXiv, 2007
+              https://arxiv.org/abs/0712.4382
+    - Clausznitzer: Chemotactic Response and Adaptation Dynamics in Escherichia coli
+                    Clausznitzer et al., PLOS Computational Biology, 2010
+                    https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1000784
 """
-
 from typing import List, Literal, Tuple
 
 import matplotlib.pyplot as plt
