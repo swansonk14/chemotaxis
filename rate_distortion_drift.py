@@ -110,8 +110,8 @@ plt.show()
 
 # Probability distribution P(c) over external states of ligand concentration c
 r = 0.1  # Constant relative ligand gradient (2)
-Pc = np.exp(-r * c) / np.sum(np.exp(-r * c) * dc, axis=0)  # TODO: is this supposed to be nearly all 0.000999??? also is the normalization constant right? why dc or is that to make it an integral? why not use actually diffs rather than mean diff of log space?
-# Pc = np.exp(-r * c) / np.sum(np.exp(-r * c) * dc, keepdims=True, axis=1)  # TODO: check whether axis=1 is right and check integration using dc
+Pc = np.exp(-r * c) / np.sum(np.exp(-r * c) * dc, keepdims=True, axis=1)
+
 
 # Functions to iterate
 
@@ -153,10 +153,10 @@ for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
     Pm = np.ones(m.shape)
 
     # Normalize P(m)
-    Pm = Pm / np.sum(Pm * dm, axis=0)  # TODO: check axis
+    Pm = Pm / np.sum(Pm * dm, axis=0)
 
     # Initial guess for conditional distribution P(m | c) over methylation levels given ligand concentrations
-    Pmc = Eqn5(Pm, lam)  # columns not normalised
+    Pmc = Eqn5(Pm, lam)
 
     for i in range(iter_max):
         # Save previous P(m)
@@ -173,10 +173,10 @@ for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
             print(f'Converged for lambda = {lam:.2f} after {i + 1} iterations')
 
             # Compute the minimum mutual information (Taylor equation 1)
-            Imin = np.sum(dc * Pc * np.sum(dm * Pmc * np.log2(eps + Pmc / (eps + Pm)), axis=0), axis=1)  # TODO: check axis
+            Imin = np.sum(dc * Pc * np.sum(dm * Pmc * np.log2(eps + Pmc / (eps + Pm)), axis=0), axis=1)
 
             # Compute maximum mean output, which is either drift or entropy production (Taylor equation 4)
-            outmax = np.sum(dc * Pc * np.sum(dm * Pmc * output, axis=0), axis=1)  # TODO: check axis
+            outmax = np.sum(dc * Pc * np.sum(dm * Pmc * output, axis=0), axis=1)
 
             # Plot mutual information vs output
             plt.plot(Imin, outmax, 'x')  # TODO: should this be 1000 of the same number?
