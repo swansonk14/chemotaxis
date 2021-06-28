@@ -77,12 +77,19 @@ dFdc = N * (  # cooperative receptor number
 # Drift velocity (Micali equation 1) TODO: why k * A instead of function K(<A>)?
 vd = k * A * (1 - A) * dFdc * rel_grad
 
-# Entropy production from phosphorylation and methylation
+# Concentration of phosphorylated CheY (CheY_p)
+# from CheY + ATP --> CheY_p + ADP (kyp rate constant) and CheY + ADP + Pi --> CheY_p + ADP (kzm rate constant)
 Yp = (kyp * A + kzm) * YT / ((kyp + kym) * A + kzp + kzm)  # TODO: Micali equation S4???
+
+# Entropy production of the phosphorylation dynamics (Micali equation S28 without Boltzmann constant kb)
 dSdty = (kyp * (YT - Yp) - kym * Yp) * A * np.log((kyp * (YT - Yp)) / (kym * Yp)) + \
-        (kzp * Yp - kzm * (YT - Yp)) * np.log((kzp * Yp) / (kzm * (YT - Yp)))  # Micali equation S28 without Boltzmann constant kb
+        (kzp * Yp - kzm * (YT - Yp)) * np.log((kzp * Yp) / (kzm * (YT - Yp)))
+
+# Entropy production of the methylation dynamics (Micali equation S29 without Boltzmann constant kb)
 dSdtm = (kRp - kRm) * (1 - A) * mT * np.log(kRp / kRm) + \
-        (kBp - kBm) * A**3 * mT * np.log(kBp / kBm)  # Micali equation S29 without Boltzmann constant kb
+        (kBp - kBm) * A**3 * mT * np.log(kBp / kBm)
+
+# Entropy production of the phosphorylation and methylation dynamics
 EP = (dSdty + dSdtm) / 1000  # Micali equation S29 (divide by 1000 to use smaller values)
 
 # Choose an output(drift vd or entropy production EP)
@@ -101,19 +108,32 @@ plt.ylabel('Methylation $m$')
 plt.show()
 """
 
-# Probability distribution over external states of ligand concentration
+# Probability distribution P(c) over external states of ligand concentration c
 r = 0.1  # Constant relative ligand gradient (2)
 Pc = np.exp(-r * c) / np.sum(np.exp(-r * c) * dc, axis=0)  # TODO: is this supposed to be nearly all 0.000999??? also is the normalization constant right? why dc or is that to make it an integral? why not use actually diffs rather than mean diff of log space?
-# Pc = np.exp(-r * c) / np.sum(np.exp(-r * c) * dc, keepdims=True, axis=1)  # TODO: check whether this is right and whether dc is needed
+# Pc = np.exp(-r * c) / np.sum(np.exp(-r * c) * dc, keepdims=True, axis=1)  # TODO: check whether axis=1 is right and check integration using dc
 
 # Functions to iterate
 
 
 def Eqn2(Pmc: np.ndarray) -> np.ndarray:
+    """
+    Given the conditional distribution P(m | c), computes the marginal distribution P(m).
+
+    :param Pmc: The conditional distribution P(m | c) over methylation levels given ligand concentrations.
+    :return: The marginal distribution P(m) over methylation levels.
+    """
     return np.sum(Pmc * Pc * dc, axis=1)  # This should give a vector of Nm by 1
 
 
 def Eqn5(Pm: np.ndarray, lam: float) -> np.ndarray:
+    """
+    Given the marginal distribution P(m), computes the conditional distribution P(m | c).
+
+    :param Pm: The marginal distribution P(m) over methylation levels.
+    :param lam: The Lagrangian parameter lambda.
+    :return: The conditional distribution P(m | c) over methylation levels given ligand concentrations.
+    """
     return np.exp(lam * vd) * Pm / np.sum(Pm * np.exp(lam * vd) * dm, axis=0)  # This should give a matrix of Nm by Nc
 
 
@@ -127,27 +147,38 @@ error_tol = 1e-1  # Error tolerance for convergence (-4, -5)
 for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
     print(f'Lambda = {lam:.2f}')
 
-    # Pick an initial guess for Pmc and Pm
-    Pmi = np.ones(m.shape)
-    # print(dm)
-    # print(np.sum(Pmi * dm, axis=1)
-    Pmi = Pmi / np.sum(Pmi * dm, axis=0)
-    # 'this is normalised!'
-    Pmci = Eqn5(Pmi, lam)  # columns not normalised!!!!
+    # Initial guess for marginal distribution P(m) over methylation levels
+    Pm = np.ones(m.shape)
+
+    # Normalize P(m)
+    Pm = Pm / np.sum(Pm * dm, axis=0)  # TODO: check axis
+
+    # Initial guess for conditional distribution P(m | c) over methylation levels given ligand concentrations
+    Pmc = Eqn5(Pm, lam)  # columns not normalised
 
     for i in range(iter_max):
-        # print(i)
-        Pmo = Pmi
-        Pmi = Eqn2(Pmci)  # NaN!!!!
-        Pmci = Eqn5(Pmi, lam)
-        # print(np.linalg.norm(Pmi - Pmo) * dm)
+        # Save previous P(m)
+        Pm_old = Pm
 
-        if np.linalg.norm(Pmi - Pmo) * dm <= error_tol:
+        # Compute new P(m)
+        Pm = Eqn2(Pmc)
+
+        # Compute new P(m, c)
+        Pmc = Eqn5(Pm, lam)
+
+        # If difference between new P(m) and old P(m) is below an error tolerance, then algorithm has converged
+        if np.linalg.norm(Pm - Pm_old) * dm <= error_tol:
             print(f'Converged for lambda = {lam:.2f} after {i + 1} iterations')
-            Imin = np.sum(dc * Pc * np.sum(dm * Pmci * np.log2(eps + Pmci / (eps + Pmi)), axis=0), axis=1)  # Mutual information Eq.1
-            outmax = np.sum(dc * Pc * np.sum(dm * Pmci * output, axis=0), axis=1)  # Mean fitness from Eq.4
-            print(outmax[0])
-            plt.plot(Imin, outmax, 'x')
+
+            # Compute the minimum mutual information (Taylor equation 1)
+            Imin = np.sum(dc * Pc * np.sum(dm * Pmc * np.log2(eps + Pmc / (eps + Pm)), axis=0), axis=1)  # TODO: check axis
+
+            # Compute maximum mean output, which is either drift or entropy production (Taylor equation 4)
+            outmax = np.sum(dc * Pc * np.sum(dm * Pmc * output, axis=0), axis=1)  # TODO: check axis
+
+            # Plot mutual information vs output
+            breakpoint()
+            plt.plot(Imin, outmax, 'x')  # TODO: should this be 1000 of the same number?
             break
 
 plt.ylabel('Mean output')
