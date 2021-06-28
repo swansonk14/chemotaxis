@@ -145,7 +145,7 @@ def Eqn5(Pm: np.ndarray, lam: float) -> np.ndarray:
 # TODO: should 0 information have 0 drift instead of 0.04 drift?
 
 iter_max = int(2e4)  # Maximum number of iterations (10)
-error_tol = 1e-3  # Error tolerance for convergence (-4, -5)
+error_tol = 5e-4  # Error tolerance for convergence (1e-1, 1e-4, 1e-5)
 for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
     print(f'Lambda = {lam:.2f}')
 
@@ -168,8 +168,10 @@ for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
         # Compute new P(m, c)
         Pmc = Eqn5(Pm, lam)
 
+        # Extract one column of Pm and Pm_old to represent new P(m) and old P(m) since all columns are identical
+        Pm_col, Pm_old_col = Pm[:, 0], Pm_old[:, 0]
+
         # If difference between new P(m) and old P(m) is below an error tolerance, then algorithm has converged
-        Pm_col, Pm_old_col = Pm[:, 0], Pm_old[:, 0]  # Extract one column since all columns are identical
         if np.linalg.norm(Pm_col - Pm_old_col) * dm <= error_tol:  # TODO: why multiply by dm outside of norm?
             print(f'Converged for lambda = {lam:.2f} after {i + 1} iterations')
 
