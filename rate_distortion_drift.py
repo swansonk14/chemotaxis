@@ -121,9 +121,10 @@ def Eqn2(Pmc: np.ndarray) -> np.ndarray:
     Given the conditional distribution P(m | c), computes the marginal distribution P(m).
 
     :param Pmc: The conditional distribution P(m | c) over methylation levels given ligand concentrations.
-    :return: The marginal distribution P(m) over methylation levels.
+    :return: The marginal distribution P(m) over methylation levels,
+             which is a matrix of size (num_methylation_levels, 1).
     """
-    return np.sum(Pmc * Pc * dc, axis=1)  # This should give a vector of Nm by 1
+    return np.sum(Pmc * Pc * dc, axis=1)
 
 
 def Eqn5(Pm: np.ndarray, lam: float) -> np.ndarray:
@@ -132,9 +133,10 @@ def Eqn5(Pm: np.ndarray, lam: float) -> np.ndarray:
 
     :param Pm: The marginal distribution P(m) over methylation levels.
     :param lam: The Lagrangian parameter lambda.
-    :return: The conditional distribution P(m | c) over methylation levels given ligand concentrations.
+    :return: The conditional distribution P(m | c) over methylation levels given ligand concentrations,
+             which is a matrix of size (num_methylation_levels, num_ligand_concentrations).
     """
-    return np.exp(lam * vd) * Pm / np.sum(Pm * np.exp(lam * vd) * dm, axis=0)  # This should give a matrix of Nm by Nc
+    return np.exp(lam * output) * Pm / np.sum(np.exp(lam * output) * Pm * dm, axis=0)
 
 
 # Iterate mutual information algorithm
@@ -177,7 +179,6 @@ for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
             outmax = np.sum(dc * Pc * np.sum(dm * Pmc * output, axis=0), axis=1)  # TODO: check axis
 
             # Plot mutual information vs output
-            breakpoint()
             plt.plot(Imin, outmax, 'x')  # TODO: should this be 1000 of the same number?
             break
 
