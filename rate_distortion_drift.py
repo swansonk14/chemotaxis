@@ -143,7 +143,7 @@ def plot_output(output: np.ndarray,
     plt.contourf(np.log(c), m, output, levels=64, cmap=CMAP)
     plt.colorbar()
     maxi = np.argmax(output, axis=0)  # Index in each column corresponding to maximum
-    plt.plot(np.log(c[0]), m[0, maxi], color='red', label='max')
+    plt.plot(np.log(c[0]), m[maxi, 0], color='red', label='max')
     plt.title(f'{output_type.title()} for given ligand concentration and methylation level')
     plt.legend(loc='upper left')
     plt.xlabel(r'Ligand concentration $\log{c}$')
