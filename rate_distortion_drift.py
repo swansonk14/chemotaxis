@@ -7,10 +7,16 @@ References:
     - Clausznitzer: Chemotactic Response and Adaptation Dynamics in Escherichia coli by Clausznitzer et al. - PLOS Computational Biology 2010 (https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1000784)
 """
 
-from typing import List, Tuple
+from typing import List, Literal, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from tap import Tap
+
+
+class Args(Tap):
+    output_type: Literal['drift', 'entropy'] = 'drift'  # The output whose mutual information will be computed.
+
 
 # Constants
 CMAP = plt.get_cmap('viridis')
@@ -38,7 +44,7 @@ def set_up_methylation_levels_and_ligand_concentrations() -> Tuple[np.ndarray, f
     return m, dm, c, dc
 
 
-def compute_drift_and_entropy(c: np.ndarray, m: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def compute_drift_and_entropy_production(c: np.ndarray, m: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     Computes the drift and entropy production.
 
@@ -96,7 +102,7 @@ def compute_drift_and_entropy(c: np.ndarray, m: np.ndarray) -> Tuple[np.ndarray,
     )
 
     # Drift velocity (Micali equation 1) TODO: why k * A instead of function K(<A>)?
-    vd = k * A * (1 - A) * dFdc * rel_grad
+    drift = k * A * (1 - A) * dFdc * rel_grad
 
     # Concentration of phosphorylated CheY (CheY_p)
     # from CheY + ATP --> CheY_p + ADP (kyp rate constant) and CheY + ADP + Pi --> CheY_p + ADP (kzm rate constant)
@@ -111,12 +117,13 @@ def compute_drift_and_entropy(c: np.ndarray, m: np.ndarray) -> Tuple[np.ndarray,
             (kBp - kBm) * A**3 * mT * np.log(kBp / kBm)
 
     # Entropy production of the phosphorylation and methylation dynamics
-    EP = (dSdty + dSdtm) / 1000  # Micali equation S29 (divide by 1000 to use smaller values)
+    entropy_production = (dSdty + dSdtm) / 1000  # Micali equation S29 (divide by 1000 to use smaller values)
 
-    return vd, EP
+    return drift, entropy_production
 
 
 def plot_output(output: np.ndarray,
+                output_type: str,
                 c: np.ndarray,
                 m: np.ndarray) -> None:
     """
@@ -124,6 +131,7 @@ def plot_output(output: np.ndarray,
 
     :param output: A matrix containing the output of interest, which is either drift or entropy production,
                    for different methylation levels (rows) and ligand concentrations (columns).
+    :param output_type: The name of the type of output (either "drift" or "entropy").
     :param c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
     """
@@ -131,9 +139,10 @@ def plot_output(output: np.ndarray,
     plt.colorbar()
     maxi = np.argmax(output, axis=0)  # Index in each column corresponding to maximum
     plt.plot(np.log(c[0]), m[0, maxi], color='red', label='max')
+    plt.title(f'{output_type.title()} for given ligand concentration and methylation level')
     plt.legend(loc='upper left')
-    plt.xlabel('Ligand $c_0$')
-    plt.ylabel('Methylation $m$')
+    plt.xlabel(r'Ligand concentration $\log{c}$')
+    plt.ylabel('Methylation level $m$')
     plt.show()
 
 
@@ -268,7 +277,7 @@ def determine_information_and_output(output: np.ndarray,
                 outmaxes.append(outmax[0])
                 break
 
-    return Imins, outmaxes, Pmc, lam
+    return Imins, outmaxes
 
 
 def plot_information_and_output(Imins: List[float],
@@ -287,19 +296,24 @@ def plot_information_and_output(Imins: List[float],
     plt.show()
 
 
-def run_simulation() -> None:
+def run_simulation(args: Args) -> None:
     """Runs the rate distortion simulation."""
     # Set up the methylation levels and ligand concentrations
     m, dm, c, dc = set_up_methylation_levels_and_ligand_concentrations()
 
     # Compute drift and entropy
-    vd, EP = compute_drift_and_entropy(c=c, m=m)
+    drift, entropy_production = compute_drift_and_entropy_production(c=c, m=m)
 
     # Select output
-    output = vd
+    if args.output_type == 'drift':
+        output = drift
+    elif args.output_type == 'entropy':
+        output = entropy_production
+    else:
+        raise ValueError(f'Output type "{args.output_type}" is not supported.')
 
     # Plot output
-    plot_output(output=output, c=c, m=m)
+    plot_output(output=output, output_type=args.output_type, c=c, m=m)
 
     # Set up marginal distribution over ligand concentrations P(c)
     Pc = set_up_ligand_concentration_distribution(c=c, dc=dc)
@@ -315,4 +329,4 @@ def run_simulation() -> None:
 
 
 if __name__ == '__main__':
-    run_simulation()
+    run_simulation(Args().parse_args())
