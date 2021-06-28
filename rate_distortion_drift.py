@@ -323,13 +323,13 @@ def run_simulation(args: Args) -> None:
     Pc = set_up_ligand_concentration_distribution(c=c, dc=dc)
 
     # Determine minimum mutual information and maximum mean output for multiple parameter values
-    Imins, outmaxes, lam, Pmc = determine_information_and_output(output=output, Pc=Pc, dm=dm, dc=dc)
+    Imins, outmaxes, lam_final, Pmc_final = determine_information_and_output(output=output, Pc=Pc, dm=dm, dc=dc)
 
     # Plot mutual information and mean output
     plot_information_and_output(Imins=Imins, outmaxes=outmaxes)
 
     # Conditional distribution for final lambda value
-    plot_conditional_distribution(Pmc=Pmc, c=c, m=m, lam=lam)
+    plot_conditional_distribution(Pmc=Pmc_final, c=c, m=m, lam=lam_final)
 
 
 if __name__ == '__main__':
