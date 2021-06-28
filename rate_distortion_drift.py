@@ -111,7 +111,6 @@ plt.show()
 # Probability distribution P(c) over external states of ligand concentration c
 r = 0.1  # Constant relative ligand gradient (2)
 Pc = np.exp(-r * c) / np.sum(np.exp(-r * c) * dc, keepdims=True, axis=1)
-Pc_row = Pc[0, :]  # All rows of Pc are identical since c only varies across columns so extract one for convenience
 
 
 # Functions to iterate
@@ -174,13 +173,13 @@ for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
             print(f'Converged for lambda = {lam:.2f} after {i + 1} iterations')
 
             # Compute the minimum mutual information (Taylor equation 1)
-            Imin = np.sum(dc * Pc_row * np.sum(dm * Pmc * np.log2(eps + Pmc / (eps + Pm)), axis=0))
+            Imin = np.sum(dc * Pc * np.sum(dm * Pmc * np.log2(eps + Pmc / (eps + Pm)), axis=0), axis=1)
 
             # Compute maximum mean output, which is either drift or entropy production (Taylor equation 4)
-            outmax = np.sum(dc * Pc_row * np.sum(dm * Pmc * output, axis=0))
+            outmax = np.sum(dc * Pc * np.sum(dm * Pmc * output, axis=0), axis=1)
 
             # Plot mutual information vs output
-            plt.plot(Imin, outmax, 'x')  # TODO: should this be 1000 of the same number?
+            plt.plot(Imin[0], outmax[0], 'x')  # Only plot 0th element since all elements are the same
             break
 
 plt.ylabel('Mean output')
