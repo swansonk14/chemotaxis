@@ -219,7 +219,7 @@ def plot_conditional_distribution(Pmc: np.ndarray,
 def determine_information_and_output(output: np.ndarray,
                                      Pc: np.ndarray,
                                      dm: float,
-                                     dc: float) -> Tuple[List[float], List[float]]:
+                                     dc: float) -> Tuple[List[float], List[float], float, np.ndarray]:
     """
     Iterates an algorithm to determine the minimum mutual information and maximum mean fitness for different parameters.
 
@@ -228,7 +228,11 @@ def determine_information_and_output(output: np.ndarray,
     :param Pc: The marginal distribution P(c) over ligand concentrations.
     :param dm: The average difference between methylation levels.
     :param dc: The average difference between ligand concentrations.
-    :return: A tuple with of a list of minimum mutual information values and a list of maximum mean fitness values.
+    :return: A tuple containing:
+               - Imins (list): a list of minimum mutual information values
+               - outmaxes (list): a list of maximum mean output values
+               - lam (float): the final value of lambda
+               - Pmc (matrix): the conditional distribution P(m | c) for the final value of lambda
     """
     # TODO: why are the numbers slightly different from Matlab? Is it just differences in numerical precision?
     # TODO: should 0 information have 0 drift instead of 0.04 drift?
@@ -277,7 +281,7 @@ def determine_information_and_output(output: np.ndarray,
                 outmaxes.append(outmax[0])
                 break
 
-    return Imins, outmaxes
+    return Imins, outmaxes, lam, Pmc
 
 
 def plot_information_and_output(Imins: List[float],
@@ -319,13 +323,13 @@ def run_simulation(args: Args) -> None:
     Pc = set_up_ligand_concentration_distribution(c=c, dc=dc)
 
     # Determine minimum mutual information and maximum mean output for multiple parameter values
-    Imins, outmaxes = determine_information_and_output(output=output, Pc=Pc, dm=dm, dc=dc)
+    Imins, outmaxes, lam, Pmc = determine_information_and_output(output=output, Pc=Pc, dm=dm, dc=dc)
 
     # Plot mutual information and mean output
     plot_information_and_output(Imins=Imins, outmaxes=outmaxes)
 
     # Conditional distribution for final lambda value
-    # plot_conditional_distribution(Pmc=Pmc, c=c, m=m, lam=lam)
+    plot_conditional_distribution(Pmc=Pmc, c=c, m=m, lam=lam)
 
 
 if __name__ == '__main__':
