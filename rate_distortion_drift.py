@@ -14,14 +14,14 @@ import numpy as np
 cmap = plt.get_cmap('viridis')
 eps = np.spacing(1)
 
-# Methylation and ligand levels
-L = 1000  # Number of levels
-mi = np.linspace(8, 0, L)  # Methylation levels
-ci = np.logspace(-3, 3, L)  # Ligand levels (LOG SPACE)
+# Methylation levels and ligand concentrations
+num_methylation_levels = num_ligand_concentrations = 1000
+mi = np.linspace(8, 0, num_methylation_levels)  # Methylation levels
+ci = np.logspace(-3, 3, num_ligand_concentrations)  # Ligand concentrations (LOG SPACE)
 dm = np.mean(np.diff(mi[::-1]))  # Differences between methylation levels
-dc = np.mean(np.diff(ci))  # Differences between ligand levels (note: intervals in c are not constant due to log space)
+dc = np.mean(np.diff(ci))  # Differences between ligand concentrations (intervals in c are not constant since log space)
 
-[c, m] = np.meshgrid(ci, mi)  # Mesh grid of ligand and methylation levels
+[c, m] = np.meshgrid(ci, mi)  # Mesh grid of ligand concentrations and methylation levels
 
 # Fitness function - estimated
 
@@ -122,9 +122,9 @@ def Eqn2(Pmc: np.ndarray) -> np.ndarray:
 
     :param Pmc: The conditional distribution P(m | c) over methylation levels given ligand concentrations.
     :return: The marginal distribution P(m) over methylation levels,
-             which is a matrix of size (num_methylation_levels, 1).
+             which is a matrix of size (num_methylation_levels, num_ligand_concentrations).
     """
-    return np.sum(Pmc * Pc * dc, axis=1)
+    return np.broadcast_to(np.sum(Pmc * Pc * dc, keepdims=True, axis=1), Pmc.shape)
 
 
 def Eqn5(Pm: np.ndarray, lam: float) -> np.ndarray:
@@ -145,7 +145,7 @@ def Eqn5(Pm: np.ndarray, lam: float) -> np.ndarray:
 # TODO: should 0 information have 0 drift instead of 0.04 drift?
 
 iter_max = int(2e4)  # Maximum number of iterations (10)
-error_tol = 1e-1  # Error tolerance for convergence (-4, -5)
+error_tol = 1e-3  # Error tolerance for convergence (-4, -5)
 for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
     print(f'Lambda = {lam:.2f}')
 
@@ -169,7 +169,8 @@ for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
         Pmc = Eqn5(Pm, lam)
 
         # If difference between new P(m) and old P(m) is below an error tolerance, then algorithm has converged
-        if np.linalg.norm(Pm - Pm_old) * dm <= error_tol:
+        Pm_col, Pm_old_col = Pm[:, 0], Pm_old[:, 0]  # Extract one column since all columns are identical
+        if np.linalg.norm(Pm_col - Pm_old_col) * dm <= error_tol:  # TODO: why multiply by dm outside of norm?
             print(f'Converged for lambda = {lam:.2f} after {i + 1} iterations')
 
             # Compute the minimum mutual information (Taylor equation 1)
