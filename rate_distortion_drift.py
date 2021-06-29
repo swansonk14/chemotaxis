@@ -273,17 +273,19 @@ def determine_information_and_output(output: np.ndarray,
 
 
 def plot_information_and_output(Imins: List[float],
-                                outmaxes: List[float]) -> None:
+                                outmaxes: List[float],
+                                output_type: str) -> None:
     """
     Plot the maximum mean output vs the minimum mutual information.
 
     :param Imins: A list of minimum mutual information values.
     :param outmaxes: A list of maximum mean output values.
+    :param output_type: The name of the type of output (either "drift" or "entropy").
     """
     # Plot mutual information vs output
     plt.plot(Imins, outmaxes, 'x')
-    plt.title('Mean Output vs Mutual Information')
-    plt.ylabel('Mean output')
+    plt.title(f'{output_type.title()} vs Mutual Information')
+    plt.ylabel(output_type.title())
     plt.xlabel('Mutual Information $I(m; c_0)$ (bits)')
     plt.show()
 
@@ -347,7 +349,7 @@ def run_simulation(args: Args) -> None:
     Imins, outmaxes, Pmcs, lams = determine_information_and_output(output=output, Pc=Pc, dm=dm, dc=dc)
 
     # Plot mutual information and mean output
-    plot_information_and_output(Imins=Imins, outmaxes=outmaxes)
+    plot_information_and_output(Imins=Imins, outmaxes=outmaxes, output_type=args.output_type)
 
     # Conditional distribution for final lambda value
     plot_conditional_distributions(
