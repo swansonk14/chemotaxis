@@ -338,7 +338,7 @@ def run_simulation(args: Args) -> None:
         raise ValueError(f'Output type "{args.output_type}" is not supported.')
 
     # Plot output
-    # plot_output(output=output, output_type=args.output_type, c=c, m=m)
+    plot_output(output=output, output_type=args.output_type, c=c, m=m)
 
     # Set up marginal distribution over ligand concentrations P(c)
     Pc = set_up_ligand_concentration_distribution(c=c, dc=dc)
@@ -347,7 +347,7 @@ def run_simulation(args: Args) -> None:
     Imins, outmaxes, Pmcs, lams = determine_information_and_output(output=output, Pc=Pc, dm=dm, dc=dc)
 
     # Plot mutual information and mean output
-    # plot_information_and_output(Imins=Imins, outmaxes=outmaxes)
+    plot_information_and_output(Imins=Imins, outmaxes=outmaxes)
 
     # Conditional distribution for final lambda value
     plot_conditional_distributions(
