@@ -17,6 +17,7 @@ from typing import List, Literal, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 from tap import Tap
+from tqdm import tqdm
 
 
 class Args(Tap):
@@ -201,30 +202,10 @@ def compute_Pmc(Pm: np.ndarray,
     return np.exp(lam * output) * Pm / np.sum(np.exp(lam * output) * Pm * dm, axis=0)
 
 
-def plot_conditional_distribution(Pmc: np.ndarray,
-                                  c: np.ndarray,
-                                  m: np.ndarray,
-                                  lam: float) -> None:
-    """
-    Plots the conditional distribution P(m | c).
-
-    :param Pmc: The conditional distribution P(m | c) over methylation levels given ligand concentrations.
-    :param c: A matrix of ligand concentrations (differing across the columns).
-    :param m: A matrix of methylation levels (differing across the rows).
-    :param lam: The Lagrangian parameter lambda.
-    """
-    plt.contourf(np.log(c), m, Pmc, 64, cmap=CMAP)
-    plt.colorbar()
-    plt.title(rf'Conditional distribution $P(m|c)$ for $\lambda={lam}$')
-    plt.ylabel('Methylation level $m$')
-    plt.xlabel(r'Ligand concentration $\log(c)$')
-    plt.show()
-
-
 def determine_information_and_output(output: np.ndarray,
                                      Pc: np.ndarray,
                                      dm: float,
-                                     dc: float) -> Tuple[List[float], List[float], float, np.ndarray]:
+                                     dc: float) -> Tuple[List[float], List[float], List[np.ndarray], np.ndarray]:
     """
     Iterates an algorithm to determine the minimum mutual information and maximum mean fitness for different parameters.
 
@@ -234,10 +215,10 @@ def determine_information_and_output(output: np.ndarray,
     :param dm: The average difference between methylation levels.
     :param dc: The average difference between ligand concentrations.
     :return: A tuple containing:
-               - Imins (list): a list of minimum mutual information values
-               - outmaxes (list): a list of maximum mean output values
-               - lam (float): the final value of lambda
-               - Pmc (matrix): the conditional distribution P(m | c) for the final value of lambda
+               - Imins (List[float]): a list of minimum mutual information values
+               - outmaxes (List[float]): a list of maximum mean output values
+               - Pmcs (List[np.ndarray]): a list of  conditional distributions P(m | c)
+               - lams (np.ndarray): a numpy array of lambda values
     """
     # TODO: why are the numbers slightly different from Matlab? Is it just differences in numerical precision?
     # TODO: should 0 information have 0 drift instead of 0.04 drift?
@@ -245,8 +226,9 @@ def determine_information_and_output(output: np.ndarray,
 
     iter_max = int(2e4)  # Maximum number of iterations (10)
     error_tol = 1e-1  # Error tolerance for convergence (1e-4, 1e-5)
-    Imins, outmaxes = [], []
-    for lam in np.logspace(0, 1, 10):  # (1, 2, 10)
+    Imins, outmaxes, Pmcs = [], [], []
+    lams = np.logspace(-1, 3, 9)    # (0, 1, 10)
+    for lam in lams:
         print(f'Lambda = {lam:.2f}')
 
         # Initial guess for marginal distribution P(m) over methylation levels
@@ -281,12 +263,13 @@ def determine_information_and_output(output: np.ndarray,
                 # Compute maximum mean output, which is either drift or entropy production (Taylor equation 4)
                 outmax = np.sum(dc * Pc * np.sum(dm * Pmc * output, axis=0), axis=1)
 
-                # Save Imin and outmax (only include 0th element since lal elements are the same)
+                # Save Imin, outmax, and Pmc (only include 0th element since lal elements are the same)
                 Imins.append(Imin[0])
                 outmaxes.append(outmax[0])
+                Pmcs.append(Pmc)
                 break
 
-    return Imins, outmaxes, lam, Pmc
+    return Imins, outmaxes, Pmcs, lams
 
 
 def plot_information_and_output(Imins: List[float],
@@ -302,6 +285,39 @@ def plot_information_and_output(Imins: List[float],
     plt.title('Mean Output vs Mutual Information')
     plt.ylabel('Mean output')
     plt.xlabel('Mutual Information $I(m; c_0)$ (bits)')
+    plt.show()
+
+
+def plot_conditional_distributions(Pmcs: List[np.ndarray],
+                                   c: np.ndarray,
+                                   m: np.ndarray,
+                                   lams: np.ndarray,
+                                   Imins: List[float],
+                                   outmaxes: List[float],
+                                   output_type: str) -> None:
+    """
+    Plots the conditional distribution P(m | c).
+
+    :param Pmcs: A list of conditional distributions P(m | c) over methylation levels given ligand concentrations.
+    :param c: A matrix of ligand concentrations (differing across the columns).
+    :param m: A matrix of methylation levels (differing across the rows).
+    :param lams: A list of values of the Lagrangian parameter lambda.
+    :param Imins: A list of minimum mutual information values.
+    :param outmaxes: A list of maximum mean output values.
+    :param output_type: The name of the type of output (either "drift" or "entropy").
+    """
+    log_c = np.log(c)
+    size = int(np.ceil(np.sqrt(len(lams))))  # Number of rows/columns in a square that can hold all the plots
+
+    fig, axes = plt.subplots(nrows=size, ncols=size)
+    for ax, Pmc, lam, Imin, outmax in tqdm(zip(axes.flat, Pmcs, lams, Imins, outmaxes), total=len(lams)):
+        im = ax.contourf(log_c, m, Pmc, levels=64, cmap=CMAP)
+        ax.title.set_text(rf'$\lambda={lam:.2f}, I={Imin:.2f}, {output_type}={outmax:.2f}$')
+
+    fig.colorbar(im, ax=axes.ravel().tolist())
+    fig.suptitle('Conditional distribution $P(m|c)$')
+    fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical')  # y label
+    fig.text(0.43, 0.04, r'Ligand concentration $\log(c)$', ha='center')  # x label
     plt.show()
 
 
@@ -322,19 +338,27 @@ def run_simulation(args: Args) -> None:
         raise ValueError(f'Output type "{args.output_type}" is not supported.')
 
     # Plot output
-    plot_output(output=output, output_type=args.output_type, c=c, m=m)
+    # plot_output(output=output, output_type=args.output_type, c=c, m=m)
 
     # Set up marginal distribution over ligand concentrations P(c)
     Pc = set_up_ligand_concentration_distribution(c=c, dc=dc)
 
     # Determine minimum mutual information and maximum mean output for multiple parameter values
-    Imins, outmaxes, lam_final, Pmc_final = determine_information_and_output(output=output, Pc=Pc, dm=dm, dc=dc)
+    Imins, outmaxes, Pmcs, lams = determine_information_and_output(output=output, Pc=Pc, dm=dm, dc=dc)
 
     # Plot mutual information and mean output
-    plot_information_and_output(Imins=Imins, outmaxes=outmaxes)
+    # plot_information_and_output(Imins=Imins, outmaxes=outmaxes)
 
     # Conditional distribution for final lambda value
-    plot_conditional_distribution(Pmc=Pmc_final, c=c, m=m, lam=lam_final)
+    plot_conditional_distributions(
+        Pmcs=Pmcs,
+        c=c,
+        m=m,
+        lams=lams,
+        Imins=Imins,
+        outmaxes=outmaxes,
+        output_type=args.output_type
+    )
 
 
 if __name__ == '__main__':
