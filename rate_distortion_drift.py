@@ -16,8 +16,9 @@ from typing import List, Literal, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.integrate import simpson as integrate
 from tap import Tap
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 
 class Args(Tap):
@@ -29,25 +30,21 @@ CMAP = plt.get_cmap('viridis')
 EPS = np.spacing(1)
 
 
-def set_up_methylation_levels_and_ligand_concentrations() -> Tuple[np.ndarray, float, np.ndarray, float]:
+def set_up_methylation_levels_and_ligand_concentrations() -> Tuple[np.ndarray, np.ndarray]:
     """
     Sets up methylation levels and ligand concentrations.
 
     :return: A tuple containing:
                - m (matrix): methylation levels (differing across the rows)
-               - dm (float): average difference between methylation levels
                - c (matrix): ligand concentrations (differing across the columns)
-               - dc (float): average difference between ligand concentrations
     """
     num_methylation_levels = num_ligand_concentrations = 1000  # Number of levels/concentrations
-    mi = np.linspace(8, 0, num_methylation_levels)  # Methylation levels
+    mi = np.linspace(0, 8, num_methylation_levels)  # Methylation levels
     ci = np.logspace(-3, 3, num_ligand_concentrations)  # Ligand concentrations (LOG SPACE)
-    dm = np.mean(np.diff(mi[::-1]))  # Differences between methylation levels
-    dc = np.mean(np.diff(ci))  # Differences between ligand concentrations (intervals in c are not constant since log space)
 
     c, m = np.meshgrid(ci, mi)  # Mesh grid of ligand concentrations and methylation levels
 
-    return m, dm, c, dc
+    return m, c
 
 
 def compute_drift_and_entropy_production(c: np.ndarray, m: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -152,41 +149,38 @@ def plot_output(output: np.ndarray,
     plt.show()
 
 
-def set_up_ligand_concentration_distribution(c: np.ndarray,
-                                             dc: float,
-                                             relative_gradient: float = 0.1) -> np.ndarray:
+def set_up_ligand_concentration_distribution(c: np.ndarray, relative_gradient: float = 0.1) -> np.ndarray:
     """
     Sets up the marginal distribution P(c) over ligand concentrations.
 
     :param c: A matrix of ligand concentrations (differing across the columns).
-    :param dc: The average difference between ligand concentrations.
     :param relative_gradient: The constant relative ligand gradient. (TODO: also try 2)
     :return: A matrix containing the marginal distribution P(c) over ligand concentrations.
     """
     pc = np.exp(-relative_gradient * c)
-    Pc = pc / np.sum(pc * dc, keepdims=True, axis=1)
+    Pc = pc / integrate(pc, c, axis=1)
 
     return Pc
 
 
 def compute_Pm(Pmc: np.ndarray,
                Pc: np.ndarray,
-               dc: float) -> np.ndarray:
+               c: np.ndarray) -> np.ndarray:
     """
     Given the conditional distribution P(m | c), computes the marginal distribution P(m).
 
     :param Pmc: The conditional distribution P(m | c) over methylation levels given ligand concentrations.
     :param Pc: The marginal distribution P(c) over ligand concentrations.
-    :param dc: The average difference between ligand concentrations.
+    :param c: A matrix of ligand concentrations (differing across the columns).
     :return: The marginal distribution P(m) over methylation levels,
              which is a matrix of size (num_methylation_levels, num_ligand_concentrations).
     """
-    return np.broadcast_to(np.sum(Pmc * Pc * dc, keepdims=True, axis=1), Pmc.shape)
+    return np.broadcast_to(integrate(Pmc * Pc, c, axis=1)[:, np.newaxis], Pmc.shape)
 
 
 def compute_Pmc(Pm: np.ndarray,
                 output: np.ndarray,
-                dm: float,
+                m: np.ndarray,
                 lam: float) -> np.ndarray:
     """
     Given the marginal distribution P(m), computes the conditional distribution P(m | c).
@@ -194,26 +188,26 @@ def compute_Pmc(Pm: np.ndarray,
     :param Pm: The marginal distribution P(m) over methylation levels.
     :param output: A matrix containing the output of interest, which is either drift or entropy production,
                    for different methylation levels (rows) and ligand concentrations (columns).
-    :param dm: The average difference between methylation levels.
+    :param m: A matrix of methylation levels (differing across the rows).
     :param lam: The Lagrangian parameter lambda.
     :return: The conditional distribution P(m | c) over methylation levels given ligand concentrations,
              which is a matrix of size (num_methylation_levels, num_ligand_concentrations).
     """
-    return np.exp(lam * output) * Pm / np.sum(np.exp(lam * output) * Pm * dm, axis=0)
+    return np.exp(lam * output) * Pm / integrate(np.exp(lam * output) * Pm, m, axis=0)
 
 
 def determine_information_and_output(output: np.ndarray,
                                      Pc: np.ndarray,
-                                     dm: float,
-                                     dc: float) -> Tuple[List[float], List[float], List[np.ndarray], np.ndarray]:
+                                     c: np.ndarray,
+                                     m: np.ndarray) -> Tuple[List[float], List[float], List[np.ndarray], np.ndarray]:
     """
     Iterates an algorithm to determine the minimum mutual information and maximum mean fitness for different parameters.
 
     :param output: A matrix containing the output of interest, which is either drift or entropy production,
                    for different methylation levels (rows) and ligand concentrations (columns).
     :param Pc: The marginal distribution P(c) over ligand concentrations.
-    :param dm: The average difference between methylation levels.
-    :param dc: The average difference between ligand concentrations.
+    :param c: A matrix of ligand concentrations (differing across the columns).
+    :param m: A matrix of methylation levels (differing across the rows).
     :return: A tuple containing:
                - Imins (List[float]): a list of minimum mutual information values
                - outmaxes (List[float]): a list of maximum mean output values
@@ -225,7 +219,7 @@ def determine_information_and_output(output: np.ndarray,
     # TODO: numerical issues with error tolerance below 1e-3???
 
     iter_max = int(2e4)  # Maximum number of iterations (10)
-    error_tol = 1e-1  # Error tolerance for convergence (1e-4, 1e-5)
+    error_tol = 0.2  # Error tolerance for convergence (1e-4, 1e-5)
     Imins, outmaxes, Pmcs = [], [], []
     lams = np.logspace(-1, 3, 9)    # (0, 1, 10)
     for lam in lams:
@@ -235,33 +229,33 @@ def determine_information_and_output(output: np.ndarray,
         Pm = np.ones(Pc.shape)
 
         # Normalize P(m)
-        Pm = Pm / np.sum(Pm * dm, axis=0)
+        Pm = Pm / integrate(Pm, m, axis=0)
 
         # Initial guess for conditional distribution P(m | c) over methylation levels given ligand concentrations
-        Pmc = compute_Pmc(Pm=Pm, output=output, dm=dm, lam=lam)
+        Pmc = compute_Pmc(Pm=Pm, output=output, m=m, lam=lam)
 
-        for i in range(iter_max):
+        for i in trange(iter_max):
             # Save previous P(m)
             Pm_old = Pm
 
             # Compute new P(m)
-            Pm = compute_Pm(Pmc=Pmc, Pc=Pc, dc=dc)
+            Pm = compute_Pm(Pmc=Pmc, Pc=Pc, c=c)
 
-            # Compute new P(m, c)
-            Pmc = compute_Pmc(Pm=Pm, output=output, dm=dm, lam=lam)
+            # Compute new P(m | c)
+            Pmc = compute_Pmc(Pm=Pm, output=output, m=m, lam=lam)
 
             # Extract one column of Pm and Pm_old to represent new P(m) and old P(m) since all columns are identical
             Pm_col, Pm_old_col = Pm[:, 0], Pm_old[:, 0]
 
             # If difference between new P(m) and old P(m) is below an error tolerance, then algorithm has converged
-            if np.linalg.norm(Pm_col - Pm_old_col) * dm <= error_tol:  # TODO: why multiply by dm outside of norm?
+            if np.linalg.norm(Pm_col - Pm_old_col) <= error_tol:
                 print(f'Converged for lambda = {lam:.2f} after {i + 1} iterations')
 
                 # Compute the minimum mutual information (Taylor equation 1)
-                Imin = np.sum(dc * Pc * np.sum(dm * Pmc * np.log2(EPS + Pmc / (EPS + Pm)), axis=0), axis=1)
+                Imin = integrate(Pc * integrate(Pmc * np.log2(EPS + Pmc / (EPS + Pm)), m, axis=0), c, axis=1)
 
                 # Compute maximum mean output, which is either drift or entropy production (Taylor equation 4)
-                outmax = np.sum(dc * Pc * np.sum(dm * Pmc * output, axis=0), axis=1)
+                outmax = integrate(Pmc * integrate(Pmc * output, m, axis=0), c, axis=1)
 
                 # Save Imin, outmax, and Pmc (only include 0th element since lal elements are the same)
                 Imins.append(Imin[0])
@@ -286,7 +280,7 @@ def plot_information_and_output(Imins: List[float],
     plt.plot(Imins, outmaxes, 'x')
     plt.title(f'{output_type.title()} vs Mutual Information')
     plt.ylabel(output_type.title())
-    plt.xlabel('Mutual Information $I(m; c_0)$ (bits)')
+    plt.xlabel('Mutual Information $I(m; c)$ (bits)')
     plt.show()
 
 
@@ -314,19 +308,19 @@ def plot_conditional_distributions(Pmcs: List[np.ndarray],
     fig, axes = plt.subplots(nrows=size, ncols=size)
     for ax, Pmc, lam, Imin, outmax in tqdm(zip(axes.flat, Pmcs, lams, Imins, outmaxes), total=len(lams)):
         im = ax.contourf(log_c, m, Pmc, levels=64, cmap=CMAP)
+        fig.colorbar(im, ax=ax)
         ax.title.set_text(rf'$\lambda={lam:.2f}, I={Imin:.2f}, {output_type}={outmax:.2f}$')
 
-    fig.colorbar(im, ax=axes.ravel().tolist())
     fig.suptitle('Conditional distribution $P(m|c)$')
     fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical')  # y label
-    fig.text(0.43, 0.04, r'Ligand concentration $\log(c)$', ha='center')  # x label
+    fig.text(0.5, 0.04, r'Ligand concentration $\log(c)$', ha='center')  # x label
     plt.show()
 
 
 def run_simulation(args: Args) -> None:
     """Runs the rate distortion simulation."""
     # Set up the methylation levels and ligand concentrations
-    m, dm, c, dc = set_up_methylation_levels_and_ligand_concentrations()
+    m, c = set_up_methylation_levels_and_ligand_concentrations()
 
     # Compute drift and entropy
     drift, entropy_production = compute_drift_and_entropy_production(c=c, m=m)
@@ -343,10 +337,10 @@ def run_simulation(args: Args) -> None:
     plot_output(output=output, output_type=args.output_type, c=c, m=m)
 
     # Set up marginal distribution over ligand concentrations P(c)
-    Pc = set_up_ligand_concentration_distribution(c=c, dc=dc)
+    Pc = set_up_ligand_concentration_distribution(c=c)
 
     # Determine minimum mutual information and maximum mean output for multiple parameter values
-    Imins, outmaxes, Pmcs, lams = determine_information_and_output(output=output, Pc=Pc, dm=dm, dc=dc)
+    Imins, outmaxes, Pmcs, lams = determine_information_and_output(output=output, Pc=Pc, m=m, c=c)
 
     # Plot mutual information and mean output
     plot_information_and_output(Imins=Imins, outmaxes=outmaxes, output_type=args.output_type)
