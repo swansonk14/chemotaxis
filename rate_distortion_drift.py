@@ -199,7 +199,8 @@ def compute_Pmc(Pm: np.ndarray,
 def determine_information_and_output(output: np.ndarray,
                                      Pc: np.ndarray,
                                      c: np.ndarray,
-                                     m: np.ndarray) -> Tuple[List[float], List[float], List[np.ndarray], np.ndarray]:
+                                     m: np.ndarray,
+                                     verbose: bool = False) -> Tuple[List[float], List[float], List[np.ndarray], np.ndarray]:
     """
     Iterates an algorithm to determine the minimum mutual information and maximum mean fitness for different parameters.
 
@@ -208,6 +209,7 @@ def determine_information_and_output(output: np.ndarray,
     :param Pc: The marginal distribution P(c) over ligand concentrations.
     :param c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
+    :param verbose: Whether to print/plot additional information.
     :return: A tuple containing:
                - Imins (List[float]): a list of minimum mutual information values
                - outmaxes (List[float]): a list of maximum mean output values
@@ -218,12 +220,14 @@ def determine_information_and_output(output: np.ndarray,
     # TODO: should 0 information have 0 drift instead of 0.04 drift?
     # TODO: numerical issues with error tolerance below 1e-3???
 
-    iter_max = int(2e4)  # Maximum number of iterations (10)
-    error_tol = 0.2  # Error tolerance for convergence (1e-4, 1e-5)
+    iter_max = 50  # Maximum number of iterations (10)
+    error_tol = 1e-2  # Error tolerance for convergence (1e-4, 1e-5)
     Imins, outmaxes, Pmcs = [], [], []
     lams = np.logspace(-1, 3, 9)    # (0, 1, 10)
     for lam in lams:
         print(f'Lambda = {lam:.2f}')
+        # Keep track of I, out, and objective function across iterations
+        Is, outs, objectives = [], [], []
 
         # Initial guess for marginal distribution P(m) over methylation levels
         Pm = np.ones(Pc.shape)
@@ -250,8 +254,19 @@ def determine_information_and_output(output: np.ndarray,
             # Extract one column of Pm and Pm_old to represent new P(m) and old P(m) since all columns are identical
             Pm_col, Pm_old_col = Pm[:, 0], Pm_old[:, 0]
 
+            # Keep track of I, out, and objective function across iterations
+            if verbose:
+                Imin = integrate(Pc * integrate(Pmc * np.log2(EPS + Pmc / (EPS + Pm)), m, axis=0), c, axis=1)
+                outmax = integrate(Pc * integrate(Pmc * output, m, axis=0), c, axis=1)
+                objective = Imin - lam * outmax
+
+                Is.append(Imin[0])
+                outs.append(outmax[0])
+                objectives.append(objective[0])
+
             # If difference between new P(m) and old P(m) is below an error tolerance, then algorithm has converged
-            if np.linalg.norm(Pm_col - Pm_old_col) <= error_tol:
+            # if np.linalg.norm(Pm_col - Pm_old_col) <= error_tol or i == iter_max - 1:
+            if i == iter_max - 1:
                 print(f'Converged for lambda = {lam:.2f} after {i + 1} iterations')
 
                 # Compute the minimum mutual information (Taylor equation 1)
@@ -265,6 +280,17 @@ def determine_information_and_output(output: np.ndarray,
                 outmaxes.append(outmax[0])
                 Pmcs.append(Pmc)
                 break
+
+        # Plot I, out, and objective function across iterations
+        if verbose:
+            plt.scatter(np.arange(len(Is)), Is, color='red', label='I', s=3)
+            plt.scatter(np.arange(len(outs)), outs, color='blue', label='out', s=3)
+            plt.scatter(np.arange(len(objectives)), objectives, color='green', label='objective', s=3)
+            plt.legend()
+            plt.xlabel('Iteration')
+            plt.ylabel('Value')
+            plt.title(rf'I, out, and objective function for $\lambda = {lam:.2f}$')
+            plt.show()
 
     return Imins, outmaxes, Pmcs, lams
 
@@ -309,7 +335,9 @@ def plot_conditional_distributions(Pmcs: List[np.ndarray],
     size = int(np.ceil(np.sqrt(len(lams))))  # Number of rows/columns in a square that can hold all the plots
 
     fig, axes = plt.subplots(nrows=size, ncols=size)
-    for ax, Pmc, lam, Imin, outmax in tqdm(zip(axes.flat, Pmcs, lams, Imins, outmaxes), total=len(lams)):
+    axes = [axes] if size == 1 else axes.flat
+
+    for ax, Pmc, lam, Imin, outmax in tqdm(zip(axes, Pmcs, lams, Imins, outmaxes), total=len(lams)):
         im = ax.contourf(log_c, m, Pmc, levels=64, cmap=CMAP)
         fig.colorbar(im, ax=ax)
         ax.title.set_text(rf'$\lambda={lam:.2f}, I={Imin:.2f}, {output_type}={outmax:.2f}$')
