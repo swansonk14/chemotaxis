@@ -16,7 +16,7 @@ from typing import List, Literal, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.integrate import simpson as integrate
+from scipy.integrate import trapezoid as integrate  # TODO: change to function integration instead of sample integration?
 from tap import Tap
 from tqdm import tqdm, trange
 
@@ -179,21 +179,21 @@ def compute_Pm(Pmc: np.ndarray,
 
 
 def compute_Pmc(Pm: np.ndarray,
-                output: np.ndarray,
                 m: np.ndarray,
-                lam: float) -> np.ndarray:
+                exp_lam_output: np.ndarray) -> np.ndarray:
     """
     Given the marginal distribution P(m), computes the conditional distribution P(m | c).
 
     :param Pm: The marginal distribution P(m) over methylation levels.
-    :param output: A matrix containing the output of interest, which is either drift or entropy production,
-                   for different methylation levels (rows) and ligand concentrations (columns).
     :param m: A matrix of methylation levels (differing across the rows).
-    :param lam: The Lagrangian parameter lambda.
+    :param exp_lam_output: A matrix containing exp(lam * output).
     :return: The conditional distribution P(m | c) over methylation levels given ligand concentrations,
              which is a matrix of size (num_methylation_levels, num_ligand_concentrations).
     """
-    return np.exp(lam * output) * Pm / integrate(np.exp(lam * output) * Pm, m, axis=0)
+    pmc = Pm * exp_lam_output
+    Pmc = pmc / integrate(pmc, m, axis=0)
+
+    return Pmc
 
 
 def determine_information_and_output(output: np.ndarray,
@@ -231,8 +231,11 @@ def determine_information_and_output(output: np.ndarray,
         # Normalize P(m)
         Pm = Pm / integrate(Pm, m, axis=0)
 
+        # Precompute exp(lam * output)
+        exp_lam_output = np.exp(lam * output)
+
         # Initial guess for conditional distribution P(m | c) over methylation levels given ligand concentrations
-        Pmc = compute_Pmc(Pm=Pm, output=output, m=m, lam=lam)
+        Pmc = compute_Pmc(Pm=Pm, m=m, exp_lam_output=exp_lam_output)
 
         for i in trange(iter_max):
             # Save previous P(m)
@@ -242,7 +245,7 @@ def determine_information_and_output(output: np.ndarray,
             Pm = compute_Pm(Pmc=Pmc, Pc=Pc, c=c)
 
             # Compute new P(m | c)
-            Pmc = compute_Pmc(Pm=Pm, output=output, m=m, lam=lam)
+            Pmc = compute_Pmc(Pm=Pm, m=m, exp_lam_output=exp_lam_output)
 
             # Extract one column of Pm and Pm_old to represent new P(m) and old P(m) since all columns are identical
             Pm_col, Pm_old_col = Pm[:, 0], Pm_old[:, 0]
@@ -257,7 +260,7 @@ def determine_information_and_output(output: np.ndarray,
                 # Compute maximum mean output, which is either drift or entropy production (Taylor equation 4)
                 outmax = integrate(Pmc * integrate(Pmc * output, m, axis=0), c, axis=1)
 
-                # Save Imin, outmax, and Pmc (only include 0th element since lal elements are the same)
+                # Save Imin, outmax, and Pmc (only include 0th element since all elements are the same)
                 Imins.append(Imin[0])
                 outmaxes.append(outmax[0])
                 Pmcs.append(Pmc)
