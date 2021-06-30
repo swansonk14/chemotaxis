@@ -258,7 +258,7 @@ def determine_information_and_output(output: np.ndarray,
                 Imin = integrate(Pc * integrate(Pmc * np.log2(EPS + Pmc / (EPS + Pm)), m, axis=0), c, axis=1)
 
                 # Compute maximum mean output, which is either drift or entropy production (Taylor equation 4)
-                outmax = integrate(Pmc * integrate(Pmc * output, m, axis=0), c, axis=1)
+                outmax = integrate(Pc * integrate(Pmc * output, m, axis=0), c, axis=1)
 
                 # Save Imin, outmax, and Pmc (only include 0th element since all elements are the same)
                 Imins.append(Imin[0])

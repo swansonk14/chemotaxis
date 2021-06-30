@@ -131,12 +131,12 @@ for lambda = logspace(0, 1, 10)  % (1, 2, 10)
     end
 end
 
-% Conditional probability for final lambda value
-%contourf(log(c), m, Pmci, 64, 'EdgeColor', 'none')
-%colorbar
-%colormap(parula)  % winter, parula, eugh, jet, hot
-%ylabel('P(m|c)')
-%xlabel('Ligand c')
+%% Conditional probability for final lambda value
+contourf(log(c), m, Pmci, 64, 'EdgeColor', 'none')
+colorbar
+colormap(parula)  % winter, parula, eugh, jet, hot
+ylabel('P(m|c)')
+xlabel('Ligand c')
 
 %% Export plot
 
