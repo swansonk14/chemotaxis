@@ -22,7 +22,8 @@ from tqdm import tqdm, trange
 
 
 class Args(Tap):
-    output_type: Literal['drift', 'entropy'] = 'drift'  # The output whose mutual information will be computed.
+    output_type: Literal['drift', 'entropy', 'drift - entropy'] = 'drift'  # The output whose mutual information will be computed.
+    verbose: bool = False  # Whether to print/plot additional information.
 
 
 # Constants
@@ -144,7 +145,7 @@ def plot_output(output: np.ndarray,
     plt.plot(np.log(c[0]), m[maxi, 0], color='red', label='max')
     plt.title(f'{output_type.title()} for given ligand concentration and methylation level')
     plt.legend(loc='upper left')
-    plt.xlabel(r'Ligand concentration $\log{c}$')
+    plt.xlabel(r'Ligand concentration $\log(c)$')
     plt.ylabel('Methylation level $m$')
     plt.show()
 
@@ -221,7 +222,8 @@ def determine_information_and_output(output: np.ndarray,
     # TODO: numerical issues with error tolerance below 1e-3???
 
     iter_max = 50  # Maximum number of iterations (10)
-    error_tol = 1e-2  # Error tolerance for convergence (1e-4, 1e-5)
+    # TODO: change convergence to be based on objective function rather than P(m)?
+    # error_tol = 1e-2  # Error tolerance for convergence (1e-4, 1e-5)  TODO: remove?
     Imins, outmaxes, Pmcs = [], [], []
     lams = np.logspace(-1, 3, 9)    # (0, 1, 10)
     for lam in lams:
@@ -242,17 +244,14 @@ def determine_information_and_output(output: np.ndarray,
         Pmc = compute_Pmc(Pm=Pm, m=m, exp_lam_output=exp_lam_output)
 
         for i in trange(iter_max):
-            # Save previous P(m)
-            Pm_old = Pm
+            # Save previous P(m)  TODO: remove?
+            # Pm_old = Pm
 
             # Compute new P(m)
             Pm = compute_Pm(Pmc=Pmc, Pc=Pc, c=c)
 
             # Compute new P(m | c)
             Pmc = compute_Pmc(Pm=Pm, m=m, exp_lam_output=exp_lam_output)
-
-            # Extract one column of Pm and Pm_old to represent new P(m) and old P(m) since all columns are identical
-            Pm_col, Pm_old_col = Pm[:, 0], Pm_old[:, 0]
 
             # Keep track of I, out, and objective function across iterations
             if verbose:
@@ -264,8 +263,12 @@ def determine_information_and_output(output: np.ndarray,
                 outs.append(outmax[0])
                 objectives.append(objective[0])
 
-            # If difference between new P(m) and old P(m) is below an error tolerance, then algorithm has converged
+            # Extract one column of Pm and Pm_old to represent new P(m) and old P(m) since all columns are identical  TODO: remove?
+            # Pm_col, Pm_old_col = Pm[:, 0], Pm_old[:, 0]
+
+            # If difference between new P(m) and old P(m) is below an error tolerance, then algorithm has converged  TODO: remove
             # if np.linalg.norm(Pm_col - Pm_old_col) <= error_tol or i == iter_max - 1:
+
             if i == iter_max - 1:
                 print(f'Converged for lambda = {lam:.2f} after {i + 1} iterations')
 
@@ -360,7 +363,9 @@ def run_simulation(args: Args) -> None:
     if args.output_type == 'drift':
         output = drift
     elif args.output_type == 'entropy':
-        output = entropy_production
+        output = entropy_production  # TODO: should this be negative so that we're minimizing entropy?
+    elif args.output_type == 'drift - entropy':
+        output = drift - 0.05 * entropy_production
     else:
         raise ValueError(f'Output type "{args.output_type}" is not supported.')
 
@@ -371,7 +376,7 @@ def run_simulation(args: Args) -> None:
     Pc = set_up_ligand_concentration_distribution(c=c)
 
     # Determine minimum mutual information and maximum mean output for multiple parameter values
-    Imins, outmaxes, Pmcs, lams = determine_information_and_output(output=output, Pc=Pc, m=m, c=c)
+    Imins, outmaxes, Pmcs, lams = determine_information_and_output(output=output, Pc=Pc, m=m, c=c, verbose=args.verbose)
 
     # Plot mutual information and mean output
     plot_information_and_output(Imins=Imins, outmaxes=outmaxes, output_type=args.output_type)
