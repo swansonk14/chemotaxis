@@ -286,13 +286,15 @@ def determine_information_and_output(output: np.ndarray,
 
         # Plot I, out, and objective function across iterations
         if verbose:
-            plt.scatter(np.arange(len(Is)), Is, color='red', label='I', s=3)
-            plt.scatter(np.arange(len(outs)), outs, color='blue', label='out', s=3)
-            plt.scatter(np.arange(len(objectives)), objectives, color='green', label='objective', s=3)
-            plt.legend()
+            fig, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex=True)
+            ax0.scatter(np.arange(len(Is)), Is, color='red', label='I', s=3)
+            ax1.scatter(np.arange(len(outs)), outs, color='blue', label='out', s=3)
+            ax2.scatter(np.arange(len(objectives)), objectives, color='green', label='objective', s=3)
+            ax0.legend()
+            ax1.legend()
+            ax2.legend()
             plt.xlabel('Iteration')
-            plt.ylabel('Value')
-            plt.title(rf'I, out, and objective function for $\lambda = {lam:.2f}$')
+            ax0.set_title(rf'I, out, and objective function for $\lambda = {lam:.2f}$')
             plt.show()
 
     return Imins, outmaxes, Pmcs, lams
@@ -381,7 +383,7 @@ def run_simulation(args: Args) -> None:
     # Plot mutual information and mean output
     plot_information_and_output(Imins=Imins, outmaxes=outmaxes, output_type=args.output_type)
 
-    # Conditional distribution for final lambda value
+    # Conditional distribution for all lambda values
     plot_conditional_distributions(
         Pmcs=Pmcs,
         c=c,
