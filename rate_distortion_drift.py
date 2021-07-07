@@ -23,6 +23,10 @@ from tqdm import tqdm, trange
 
 class Args(Tap):
     output_type: Literal['drift', 'entropy', 'drift - entropy'] = 'drift'  # The output whose mutual information will be computed.
+    iter_max: int = 50  # Maximum number of iterations of the algorithm.
+    lambda_min: float = -1.0  # Minimum value of lambda in log space (i.e., min lambda = 10^{lambda_min}).
+    lambda_max: float = 3.0  # Maximum value of lambda in log space (i.e., min lambda = 10^{lambda_max}).
+    lambda_num: int = 9  # Number of lambda values between lambda_min and lambda_max.
     verbose: bool = False  # Whether to print/plot additional information.
 
 
@@ -41,7 +45,7 @@ def set_up_methylation_levels_and_ligand_concentrations() -> Tuple[np.ndarray, n
     """
     num_methylation_levels = num_ligand_concentrations = 1000  # Number of levels/concentrations
     mi = np.linspace(0, 8, num_methylation_levels)  # Methylation levels
-    ci = np.logspace(-3, 3, num_ligand_concentrations)  # Ligand concentrations (LOG SPACE)
+    ci = np.logspace(-3, 3, num_ligand_concentrations)  # Ligand concentrations (log space)
 
     c, m = np.meshgrid(ci, mi)  # Mesh grid of ligand concentrations and methylation levels
 
@@ -59,7 +63,7 @@ def compute_drift_and_entropy_production(c: np.ndarray, m: np.ndarray) -> Tuple[
     # Parameters (Micali table S1)
     N = 5  # Cooperative receptor number (paper uses 13, range[5; 13])
     va = 1 / 3  # Fraction of Tar receptors (paper uses 1 / 3)
-    vs = 2 / 3  # Fraction of Tsr receptors (paper uses 1 / 3)
+    vs = 2 / 3  # Fraction of Tsr receptors (paper uses 2 / 3)
     Kaon = 0.5  # Active receptors dissociation constant Tar (mM, paper uses 1.0)
     Kson = 100000  # Active receptors dissociation constant Tsr (mM, paper uses 1E6)
     Kaoff = 0.02  # Inactive receptors dissociation constant Tar (mM, paper uses 0.03)
@@ -201,6 +205,10 @@ def determine_information_and_output(output: np.ndarray,
                                      Pc: np.ndarray,
                                      c: np.ndarray,
                                      m: np.ndarray,
+                                     iter_max: int,
+                                     lambda_min: float,
+                                     lambda_max: float,
+                                     lambda_num: int,
                                      verbose: bool = False) -> Tuple[List[float], List[float], List[np.ndarray], np.ndarray]:
     """
     Iterates an algorithm to determine the minimum mutual information and maximum mean fitness for different parameters.
@@ -210,6 +218,10 @@ def determine_information_and_output(output: np.ndarray,
     :param Pc: The marginal distribution P(c) over ligand concentrations.
     :param c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
+    :param iter_max: Maximum number of iterations of the algorithm.
+    :param lambda_min: Minimum value of lambda in log space (i.e., min lambda = 10^{lambda_min}).
+    :param lambda_max: Maximum value of lambda in log space (i.e., min lambda = 10^{lambda_max}).
+    :param lambda_num: Number of lambda values between lambda_min and lambda_max.
     :param verbose: Whether to print/plot additional information.
     :return: A tuple containing:
                - Imins (List[float]): a list of minimum mutual information values
@@ -217,15 +229,10 @@ def determine_information_and_output(output: np.ndarray,
                - Pmcs (List[np.ndarray]): a list of  conditional distributions P(m | c)
                - lams (np.ndarray): a numpy array of lambda values
     """
-    # TODO: why are the numbers slightly different from Matlab? Is it just differences in numerical precision?
-    # TODO: should 0 information have 0 drift instead of 0.04 drift?
-    # TODO: numerical issues with error tolerance below 1e-3???
-
-    iter_max = 50  # Maximum number of iterations (10)
     # TODO: change convergence to be based on objective function rather than P(m)?
     # error_tol = 1e-2  # Error tolerance for convergence (1e-4, 1e-5)  TODO: remove?
     Imins, outmaxes, Pmcs = [], [], []
-    lams = np.logspace(-1, 3, 9)    # (0, 1, 10)
+    lams = np.logspace(lambda_min, lambda_max, lambda_num)
     for lam in lams:
         print(f'Lambda = {lam:.2f}')
         # Keep track of I, out, and objective function across iterations
@@ -378,7 +385,17 @@ def run_simulation(args: Args) -> None:
     Pc = set_up_ligand_concentration_distribution(c=c)
 
     # Determine minimum mutual information and maximum mean output for multiple parameter values
-    Imins, outmaxes, Pmcs, lams = determine_information_and_output(output=output, Pc=Pc, m=m, c=c, verbose=args.verbose)
+    Imins, outmaxes, Pmcs, lams = determine_information_and_output(
+        output=output,
+        Pc=Pc,
+        m=m,
+        c=c,
+        iter_max=args.iter_max,
+        lambda_min=args.lambda_min,
+        lambda_max=args.lambda_max,
+        lambda_num=args.lambda_num,
+        verbose=args.verbose
+    )
 
     # Plot mutual information and mean output
     plot_information_and_output(Imins=Imins, outmaxes=outmaxes, output_type=args.output_type)
