@@ -27,7 +27,7 @@ class Args(Tap):
     lambda_min: float = -1.0  # Minimum value of lambda in log space (i.e., min lambda = 10^{lambda_min}).
     lambda_max: float = 3.0  # Maximum value of lambda in log space (i.e., min lambda = 10^{lambda_max}).
     lambda_num: int = 9  # Number of lambda values between lambda_min and lambda_max.
-    verbose: bool = False  # Whether to print/plot additional information.
+    verbosity: Literal[0, 1, 2] = 0  # Verbosity level. Higher means more verbose.
 
 
 # Constants
@@ -203,13 +203,15 @@ def compute_Pmc(Pm: np.ndarray,
 
 def plot_information_output_and_objective(Is: List[float],
                                           outs: List[float],
-                                          objectives: List[float]) -> None:
+                                          objectives: List[float],
+                                          lam: float) -> None:
     """
     Plots the mutual information, output, and objective function across iterations.
 
     :param Is: A list of mutual information values across iterations.
     :param outs: A list of output values across iterations.
     :param objectives: A list of objective function values across iterations.
+    :param lam: Lagrangian parameter lambda.
     """
     fig, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex=True)
     ax0.scatter(np.arange(len(Is)), Is, color='red', label='I', s=3)
@@ -231,7 +233,11 @@ def determine_information_and_output(output: np.ndarray,
                                      lambda_min: float,
                                      lambda_max: float,
                                      lambda_num: int,
-                                     verbose: bool = False) -> Tuple[List[float], List[float], List[np.ndarray], np.ndarray]:
+                                     verbosity: int) -> Tuple[List[float],
+                                                                     List[float],
+                                                                     List[np.ndarray],
+                                                                     List[np.ndarray],
+                                                                     np.ndarray]:
     """
     Iterates an algorithm to determine the minimum mutual information and maximum mean fitness for different parameters.
 
@@ -244,16 +250,17 @@ def determine_information_and_output(output: np.ndarray,
     :param lambda_min: Minimum value of lambda in log space (i.e., min lambda = 10^{lambda_min}).
     :param lambda_max: Maximum value of lambda in log space (i.e., min lambda = 10^{lambda_max}).
     :param lambda_num: Number of lambda values between lambda_min and lambda_max.
-    :param verbose: Whether to print/plot additional information.
+    :param verbosity: Verbosity level. Higher means more verbose.
     :return: A tuple containing:
                - Imins (List[float]): a list of minimum mutual information values
                - outmaxes (List[float]): a list of maximum mean output values
                - Pmcs (List[np.ndarray]): a list of  conditional distributions P(m | c)
+               - Pms (List[np.ndarray]): a list of marginal distributions P(m)
                - lams (np.ndarray): a numpy array of lambda values
     """
     # TODO: change convergence to be based on objective function rather than P(m)?
     # error_tol = 1e-2  # Error tolerance for convergence (1e-4, 1e-5)  TODO: remove?
-    Imins, outmaxes, Pmcs = [], [], []
+    Imins, outmaxes, Pmcs, Pms = [], [], [], []
     lams = np.logspace(lambda_min, lambda_max, lambda_num)
     for lam in lams:
         print(f'Lambda = {lam:.2f}')
@@ -283,7 +290,7 @@ def determine_information_and_output(output: np.ndarray,
             Pmc = compute_Pmc(Pm=Pm, m=m, exp_lam_output=exp_lam_output)
 
             # Keep track of I, out, and objective function across iterations
-            if verbose:
+            if verbosity >= 2:
                 Imin = integrate(Pc * integrate(Pmc * np.log2(EPS + Pmc / (EPS + Pm)), m, axis=0), c, axis=1)
                 outmax = integrate(Pc * integrate(Pmc * output, m, axis=0), c, axis=1)
                 objective = Imin - lam * outmax
@@ -311,13 +318,14 @@ def determine_information_and_output(output: np.ndarray,
                 Imins.append(Imin[0])
                 outmaxes.append(outmax[0])
                 Pmcs.append(Pmc)
+                Pms.append(Pm)
                 break
 
         # Plot I, out, and objective function across iterations
-        if verbose:
-            plot_information_output_and_objective()
+        if verbosity >= 2:
+            plot_information_output_and_objective(Is=Is, outs=outs, objectives=objectives, lam=lam)
 
-    return Imins, outmaxes, Pmcs, lams
+    return Imins, outmaxes, Pmcs, Pms, lams
 
 
 def plot_information_and_output(Imins: List[float],
@@ -338,23 +346,26 @@ def plot_information_and_output(Imins: List[float],
     plt.show()
 
 
-def plot_conditional_distributions(Pmcs: List[np.ndarray],
-                                   c: np.ndarray,
-                                   m: np.ndarray,
-                                   lams: np.ndarray,
-                                   Imins: List[float],
-                                   outmaxes: List[float],
-                                   output_type: str) -> None:
+def plot_distributions_across_lambdas(distributions: List[np.ndarray],
+                                      c: np.ndarray,
+                                      m: np.ndarray,
+                                      lams: np.ndarray,
+                                      Imins: List[float],
+                                      outmaxes: List[float],
+                                      output_type: str,
+                                      title: str) -> None:
     """
-    Plots the conditional distribution P(m | c).
+    Plots the distributions over methylation levels and ligand concentrations across lambda values.
 
-    :param Pmcs: A list of conditional distributions P(m | c) over methylation levels given ligand concentrations.
+    :param distributions: A list of probability distributions over methylation levels
+                          and ligand concentrations across lambda values.
     :param c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
     :param lams: A list of values of the Lagrangian parameter lambda.
     :param Imins: A list of minimum mutual information values.
     :param outmaxes: A list of maximum mean output values.
     :param output_type: The name of the type of output (either "drift" or "entropy").
+    :param title: The title of the plot.
     """
     log_c = np.log(c)
     size = int(np.ceil(np.sqrt(len(lams))))  # Number of rows/columns in a square that can hold all the plots
@@ -362,12 +373,12 @@ def plot_conditional_distributions(Pmcs: List[np.ndarray],
     fig, axes = plt.subplots(nrows=size, ncols=size)
     axes = [axes] if size == 1 else axes.flat
 
-    for ax, Pmc, lam, Imin, outmax in tqdm(zip(axes, Pmcs, lams, Imins, outmaxes), total=len(lams)):
-        im = ax.contourf(log_c, m, Pmc, levels=64, cmap=CMAP)
+    for ax, distribution, lam, Imin, outmax in tqdm(zip(axes, distributions, lams, Imins, outmaxes), total=len(lams)):
+        im = ax.contourf(log_c, m, distribution, levels=64, cmap=CMAP)
         fig.colorbar(im, ax=ax)
         ax.title.set_text(rf'$\lambda={lam:.2f}, I={Imin:.2f}, {output_type}={outmax:.2f}$')
 
-    fig.suptitle('Conditional distribution $P(m|c)$')
+    fig.suptitle(title)
     fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical')  # y label
     fig.text(0.5, 0.04, r'Ligand concentration $\log(c)$', ha='center')  # x label
     plt.show()
@@ -392,18 +403,18 @@ def run_simulation(args: Args) -> None:
         raise ValueError(f'Output type "{args.output_type}" is not supported.')
 
     # Plot output
-    if args.verbose:
+    if args.verbosity >= 1:
         plot_output(output=output, output_type=args.output_type, c=c, m=m)
 
     # Set up marginal distribution over ligand concentrations P(c)
     Pc = set_up_ligand_concentration_distribution(c=c)
 
     # Plot P(c)
-    if args.verbose:
+    if args.verbosity >= 1:
         plot_output(output=Pc, output_type='$P(c)$', c=c, m=m)
 
     # Determine minimum mutual information and maximum mean output for multiple parameter values
-    Imins, outmaxes, Pmcs, lams = determine_information_and_output(
+    Imins, outmaxes, Pmcs, Pms, lams = determine_information_and_output(
         output=output,
         Pc=Pc,
         m=m,
@@ -412,22 +423,36 @@ def run_simulation(args: Args) -> None:
         lambda_min=args.lambda_min,
         lambda_max=args.lambda_max,
         lambda_num=args.lambda_num,
-        verbose=args.verbose
+        verbosity=args.verbosity
     )
 
     # Plot mutual information and mean output
     plot_information_and_output(Imins=Imins, outmaxes=outmaxes, output_type=args.output_type)
 
-    # Conditional distribution for all lambda values
-    plot_conditional_distributions(
-        Pmcs=Pmcs,
+    # Plot conditional distribution for all lambda values
+    plot_distributions_across_lambdas(
+        distributions=Pmcs,
         c=c,
         m=m,
         lams=lams,
         Imins=Imins,
         outmaxes=outmaxes,
-        output_type=args.output_type
+        output_type=args.output_type,
+        title='Conditional distribution $P(m|c)$'
     )
+
+    # Plot marginal distribution for all lambda values
+    if args.verbosity >= 1:
+        plot_distributions_across_lambdas(
+            distributions=Pms,
+            c=c,
+            m=m,
+            lams=lams,
+            Imins=Imins,
+            outmaxes=outmaxes,
+            output_type=args.output_type,
+            title='Marginal distribution $P(m)$'
+        )
 
 
 if __name__ == '__main__':
