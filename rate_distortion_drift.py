@@ -137,9 +137,9 @@ def plot_output(output: np.ndarray,
     """
     Plots the output given the ligand concentration and methylation level.
 
-    :param output: A matrix containing the output of interest, which is either drift or entropy production,
-                   for different methylation levels (rows) and ligand concentrations (columns).
-    :param output_type: The name of the type of output (either "drift" or "entropy").
+    :param output: A matrix containing the output of interest for different methylation levels (rows)
+                   and ligand concentrations (columns).
+    :param output_type: The name of the type of output.
     :param c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
     """
@@ -199,6 +199,28 @@ def compute_Pmc(Pm: np.ndarray,
     Pmc = pmc / integrate(pmc, m, axis=0)
 
     return Pmc
+
+
+def plot_information_output_and_objective(Is: List[float],
+                                          outs: List[float],
+                                          objectives: List[float]) -> None:
+    """
+    Plots the mutual information, output, and objective function across iterations.
+
+    :param Is: A list of mutual information values across iterations.
+    :param outs: A list of output values across iterations.
+    :param objectives: A list of objective function values across iterations.
+    """
+    fig, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex=True)
+    ax0.scatter(np.arange(len(Is)), Is, color='red', label='I', s=3)
+    ax1.scatter(np.arange(len(outs)), outs, color='blue', label='out', s=3)
+    ax2.scatter(np.arange(len(objectives)), objectives, color='green', label='objective', s=3)
+    ax0.legend()
+    ax1.legend()
+    ax2.legend()
+    plt.xlabel('Iteration')
+    ax0.set_title(rf'I, out, and objective function for $\lambda = {lam:.2f}$')
+    plt.show()
 
 
 def determine_information_and_output(output: np.ndarray,
@@ -293,16 +315,7 @@ def determine_information_and_output(output: np.ndarray,
 
         # Plot I, out, and objective function across iterations
         if verbose:
-            fig, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex=True)
-            ax0.scatter(np.arange(len(Is)), Is, color='red', label='I', s=3)
-            ax1.scatter(np.arange(len(outs)), outs, color='blue', label='out', s=3)
-            ax2.scatter(np.arange(len(objectives)), objectives, color='green', label='objective', s=3)
-            ax0.legend()
-            ax1.legend()
-            ax2.legend()
-            plt.xlabel('Iteration')
-            ax0.set_title(rf'I, out, and objective function for $\lambda = {lam:.2f}$')
-            plt.show()
+            plot_information_output_and_objective()
 
     return Imins, outmaxes, Pmcs, lams
 
@@ -379,10 +392,15 @@ def run_simulation(args: Args) -> None:
         raise ValueError(f'Output type "{args.output_type}" is not supported.')
 
     # Plot output
-    plot_output(output=output, output_type=args.output_type, c=c, m=m)
+    if args.verbose:
+        plot_output(output=output, output_type=args.output_type, c=c, m=m)
 
     # Set up marginal distribution over ligand concentrations P(c)
     Pc = set_up_ligand_concentration_distribution(c=c)
+
+    # Plot P(c)
+    if args.verbose:
+        plot_output(output=Pc, output_type='$P(c)$', c=c, m=m)
 
     # Determine minimum mutual information and maximum mean output for multiple parameter values
     Imins, outmaxes, Pmcs, lams = determine_information_and_output(
