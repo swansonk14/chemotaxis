@@ -16,18 +16,28 @@ from typing import List, Literal, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.integrate import trapezoid as integrate  # TODO: change to function integration instead of sample integration?
+from scipy.integrate import trapezoid as integrate
 from tap import Tap
 from tqdm import tqdm, trange
 
 
 class Args(Tap):
-    output_type: Literal['drift', 'entropy', 'drift - entropy'] = 'drift'  # The output whose mutual information will be computed.
-    iter_max: int = 50  # Maximum number of iterations of the algorithm.
-    lambda_min: float = -1.0  # Minimum value of lambda in log space (i.e., min lambda = 10^{lambda_min}).
-    lambda_max: float = 3.0  # Maximum value of lambda in log space (i.e., min lambda = 10^{lambda_max}).
-    lambda_num: int = 9  # Number of lambda values between lambda_min and lambda_max.
-    verbosity: Literal[0, 1, 2] = 0  # Verbosity level. Higher means more verbose.
+    output_type: Literal['drift', 'entropy', 'drift - entropy'] = 'drift'
+    """The output whose mutual information will be computed."""
+    iter_max: int = 50
+    """Maximum number of iterations of the algorithm."""
+    lambda_min: float = -1.0
+    """Minimum value of lambda in log space (i.e., min lambda = 10^{lambda_min})."""
+    lambda_max: float = 3.0
+    """Maximum value of lambda in log space (i.e., min lambda = 10^{lambda_max})."""
+    lambda_num: int = 9
+    """Number of lambda values between lambda_min and lambda_max."""
+    nu: float = 0.05
+    """Lagrangian nu applied to the entropy. Only relevant for output_type == 'drift - entropy'."""
+    ligand_distribution: Literal['exponential', 'uniform'] = 'exponential'
+    """The type of distribution of ligand concentrations."""
+    verbosity: Literal[0, 1, 2] = 0
+    """Verbosity level. Higher means more verbose."""
 
 
 # Constants
@@ -69,7 +79,7 @@ def compute_drift_and_entropy_production(c: np.ndarray, m: np.ndarray) -> Tuple[
     Kaoff = 0.02  # Inactive receptors dissociation constant Tar (mM, paper uses 0.03)
     Ksoff = 100  # Inactive receptors dissociation constant Tsr (mM, paper uses 100)
     YT = 9.7  # Total concentration of CheY (muM, paper uses 7.9, range [6; 9.7])
-    k = 1  # TODO: what is this? susceptibility? motor dissociation constant?
+    k = 1  # Approximation of the susceptibility function.
 
     # Phosphorylation rate parameters (Micali equation S28)
     nu = 0.01  # Proportionality constant between forward and backward rates (paper says << 1)
@@ -109,7 +119,7 @@ def compute_drift_and_entropy_production(c: np.ndarray, m: np.ndarray) -> Tuple[
             vs * (c / (c + Ksoff) - c / (c + Kson))  # Tsr receptor
     )
 
-    # Drift velocity (Micali equation 1) TODO: why k * A instead of function K(<A>)?
+    # Drift velocity (Micali equation 1)
     drift = k * A * (1 - A) * dFdc * rel_grad
 
     # Concentration of phosphorylated CheY (CheY_p)
@@ -154,15 +164,24 @@ def plot_output(output: np.ndarray,
     plt.show()
 
 
-def set_up_ligand_concentration_distribution(c: np.ndarray, relative_gradient: float = 0.1) -> np.ndarray:
+def set_up_ligand_concentration_distribution(ligand_distribution: str,
+                                             c: np.ndarray,
+                                             relative_gradient: float = 0.1) -> np.ndarray:
     """
     Sets up the marginal distribution P(c) over ligand concentrations.
 
+    :param ligand_distribution: The type of distribution of ligand concentrations.
     :param c: A matrix of ligand concentrations (differing across the columns).
-    :param relative_gradient: The constant relative ligand gradient. (TODO: also try 2)
+    :param relative_gradient: The constant relative ligand gradient.
     :return: A matrix containing the marginal distribution P(c) over ligand concentrations.
     """
-    pc = np.exp(-relative_gradient * c)
+    if ligand_distribution == 'exponential':
+        pc = np.exp(-relative_gradient * c)
+    elif ligand_distribution == 'uniform':
+        pc = np.ones(c.shape)
+    else:
+        raise ValueError(f'Ligand concentration distribution "{ligand_distribution}" not supported.')
+
     Pc = pc / integrate(pc, c, axis=1)
 
     return Pc
@@ -396,9 +415,9 @@ def run_simulation(args: Args) -> None:
     if args.output_type == 'drift':
         output = drift
     elif args.output_type == 'entropy':
-        output = entropy_production  # TODO: should this be negative so that we're minimizing entropy?
+        output = -entropy_production
     elif args.output_type == 'drift - entropy':
-        output = drift - 0.05 * entropy_production
+        output = drift - args.nu * entropy_production
     else:
         raise ValueError(f'Output type "{args.output_type}" is not supported.')
 
@@ -407,7 +426,7 @@ def run_simulation(args: Args) -> None:
         plot_output(output=output, output_type=args.output_type, c=c, m=m)
 
     # Set up marginal distribution over ligand concentrations P(c)
-    Pc = set_up_ligand_concentration_distribution(c=c)
+    Pc = set_up_ligand_concentration_distribution(ligand_distribution=args.ligand_distribution, c=c)
 
     # Plot P(c)
     if args.verbosity >= 1:
