@@ -24,7 +24,7 @@ from tqdm import tqdm, trange
 class Args(Tap):
     output_type: Literal['drift', 'entropy', 'drift - entropy'] = 'drift'
     """The output whose mutual information will be computed."""
-    iter_max: int = 50
+    iter_max: int = 100
     """Maximum number of iterations of the algorithm."""
     lambda_min: float = -1.0
     """Minimum value of lambda in log space (i.e., min lambda = 10^{lambda_min})."""
@@ -255,10 +255,10 @@ def determine_information_and_output(output: np.ndarray,
                                      lambda_max: float,
                                      lambda_num: int,
                                      verbosity: int) -> Tuple[List[float],
-                                                                     List[float],
-                                                                     List[np.ndarray],
-                                                                     List[np.ndarray],
-                                                                     np.ndarray]:
+                                                              List[float],
+                                                              List[np.ndarray],
+                                                              List[np.ndarray],
+                                                              np.ndarray]:
     """
     Iterates an algorithm to determine the minimum mutual information and maximum mean fitness for different parameters.
 
