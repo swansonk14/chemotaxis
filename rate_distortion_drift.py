@@ -36,6 +36,8 @@ class Args(Tap):
     """Lagrangian nu applied to the entropy. Only relevant for output_type == 'drift - entropy'."""
     ligand_distribution: Literal['exponential', 'uniform'] = 'exponential'
     """The type of distribution of ligand concentrations."""
+    ligand_gradient: float = 0.1
+    """The relative gradient of the ligand concentration. Only relevant for ligand_distribution == 'exponential'."""
     verbosity: Literal[0, 1, 2] = 0
     """Verbosity level. Higher means more verbose."""
 
@@ -166,17 +168,17 @@ def plot_output(output: np.ndarray,
 
 def set_up_ligand_concentration_distribution(ligand_distribution: str,
                                              c: np.ndarray,
-                                             relative_gradient: float = 0.1) -> np.ndarray:
+                                             ligand_gradient: float) -> np.ndarray:
     """
     Sets up the marginal distribution P(c) over ligand concentrations.
 
     :param ligand_distribution: The type of distribution of ligand concentrations.
     :param c: A matrix of ligand concentrations (differing across the columns).
-    :param relative_gradient: The constant relative ligand gradient.
+    :param ligand_gradient: The constant relative ligand gradient (for exponential distribution).
     :return: A matrix containing the marginal distribution P(c) over ligand concentrations.
     """
     if ligand_distribution == 'exponential':
-        pc = np.exp(-relative_gradient * c)
+        pc = np.exp(-ligand_gradient * c)
     elif ligand_distribution == 'uniform':
         pc = np.ones(c.shape)
     else:
@@ -426,7 +428,11 @@ def run_simulation(args: Args) -> None:
         plot_output(output=output, output_type=args.output_type, c=c, m=m)
 
     # Set up marginal distribution over ligand concentrations P(c)
-    Pc = set_up_ligand_concentration_distribution(ligand_distribution=args.ligand_distribution, c=c)
+    Pc = set_up_ligand_concentration_distribution(
+        ligand_distribution=args.ligand_distribution,
+        c=c,
+        ligand_gradient=args.ligand_gradient
+    )
 
     # Plot P(c)
     if args.verbosity >= 1:
