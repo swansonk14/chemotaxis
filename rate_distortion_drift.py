@@ -26,18 +26,16 @@ class Args(Tap):
     """The output whose mutual information will be computed."""
     iter_max: int = 100
     """Maximum number of iterations of the algorithm."""
-    lambda_min: float = -1.0
+    lambda_min: float = 1.0
     """Minimum value of lambda in log space (i.e., min lambda = 10^{lambda_min})."""
-    lambda_max: float = 3.0
+    lambda_max: float = 3.5
     """Maximum value of lambda in log space (i.e., min lambda = 10^{lambda_max})."""
     lambda_num: int = 9
     """Number of lambda values between lambda_min and lambda_max."""
-    nu: float = 0.05
+    nu: float = 0.01
     """Lagrangian nu applied to the entropy. Only relevant for output_type == 'drift - entropy'."""
-    ligand_distribution: Literal['exponential', 'uniform'] = 'exponential'
-    """The type of distribution of ligand concentrations."""
     ligand_gradient: float = 0.1
-    """The relative gradient of the ligand concentration. Only relevant for ligand_distribution == 'exponential'."""
+    """The relative gradient of the ligand concentration."""
     verbosity: Literal[0, 1, 2] = 0
     """Verbosity level. Higher means more verbose."""
 
@@ -56,20 +54,23 @@ def set_up_methylation_levels_and_ligand_concentrations() -> Tuple[np.ndarray, n
                - c (matrix): ligand concentrations (differing across the columns)
     """
     num_methylation_levels = num_ligand_concentrations = 1000  # Number of levels/concentrations
-    mi = np.linspace(0, 8, num_methylation_levels)  # Methylation levels
-    ci = np.logspace(-3, 3, num_ligand_concentrations)  # Ligand concentrations (log space)
+    mi = np.linspace(0, 8, num_methylation_levels)  # Methylation levels TODO: (0, 15)
+    ci = np.logspace(-3, 3, num_ligand_concentrations)  # Ligand concentrations (log space) TODO: (-3, 6)
 
     c, m = np.meshgrid(ci, mi)  # Mesh grid of ligand concentrations and methylation levels
 
     return m, c
 
 
-def compute_drift_and_entropy_production(c: np.ndarray, m: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def compute_drift_and_entropy_production(c: np.ndarray,
+                                         m: np.ndarray,
+                                         ligand_gradient: float) -> Tuple[np.ndarray, np.ndarray]:
     """
     Computes the drift and entropy production.
 
     :param c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
+    :param ligand_gradient: The relative gradient of the ligand concentration.
     :return: A tuple consisting of a matrix of drift values and a matrix of entropy production values.
     """
     # Parameters (Micali table S1)
@@ -99,9 +100,6 @@ def compute_drift_and_entropy_production(c: np.ndarray, m: np.ndarray) -> Tuple[
     kBm = nu * kBp  # Rate constant k_B^+ for reaction [m]_1 + CH3OH --> [m + 1]_1 + H2O (s^{-1})
     mT = 1e4  # Total number of methylation sites
 
-    # Ligand (local) gradient steepness
-    rel_grad = 0.75
-
     # Methylation free energy (Monod-Wyman-Changeux (MWC) model, Clausznitzer equation 5)
     mE = 1 - 0.5 * m
 
@@ -122,7 +120,7 @@ def compute_drift_and_entropy_production(c: np.ndarray, m: np.ndarray) -> Tuple[
     )
 
     # Drift velocity (Micali equation 1)
-    drift = k * A * (1 - A) * dFdc * rel_grad
+    drift = k * A * (1 - A) * dFdc * ligand_gradient
 
     # Concentration of phosphorylated CheY (CheY_p)
     # from CheY + ATP --> CheY_p + ADP (kyp rate constant) and CheY + ADP + Pi --> CheY_p + ADP (kzm rate constant)
@@ -166,24 +164,15 @@ def plot_output(output: np.ndarray,
     plt.show()
 
 
-def set_up_ligand_concentration_distribution(ligand_distribution: str,
-                                             c: np.ndarray,
-                                             ligand_gradient: float) -> np.ndarray:
+def set_up_ligand_concentration_distribution(c: np.ndarray, ligand_gradient: float) -> np.ndarray:
     """
     Sets up the marginal distribution P(c) over ligand concentrations.
 
-    :param ligand_distribution: The type of distribution of ligand concentrations.
     :param c: A matrix of ligand concentrations (differing across the columns).
-    :param ligand_gradient: The constant relative ligand gradient (for exponential distribution).
+    :param ligand_gradient: The relative gradient of the ligand concentration.
     :return: A matrix containing the marginal distribution P(c) over ligand concentrations.
     """
-    if ligand_distribution == 'exponential':
-        pc = np.exp(-ligand_gradient * c)
-    elif ligand_distribution == 'uniform':
-        pc = np.ones(c.shape)
-    else:
-        raise ValueError(f'Ligand concentration distribution "{ligand_distribution}" not supported.')
-
+    pc = np.exp(-ligand_gradient * c)
     Pc = pc / integrate(pc, c, axis=1)
 
     return Pc
@@ -411,7 +400,11 @@ def run_simulation(args: Args) -> None:
     m, c = set_up_methylation_levels_and_ligand_concentrations()
 
     # Compute drift and entropy
-    drift, entropy_production = compute_drift_and_entropy_production(c=c, m=m)
+    drift, entropy_production = compute_drift_and_entropy_production(
+        c=c,
+        m=m,
+        ligand_gradient=args.ligand_gradient
+    )
 
     # Select output
     if args.output_type == 'drift':
@@ -428,11 +421,7 @@ def run_simulation(args: Args) -> None:
         plot_output(output=output, output_type=args.output_type, c=c, m=m)
 
     # Set up marginal distribution over ligand concentrations P(c)
-    Pc = set_up_ligand_concentration_distribution(
-        ligand_distribution=args.ligand_distribution,
-        c=c,
-        ligand_gradient=args.ligand_gradient
-    )
+    Pc = set_up_ligand_concentration_distribution(c=c, ligand_gradient=args.ligand_gradient)
 
     # Plot P(c)
     if args.verbosity >= 1:
