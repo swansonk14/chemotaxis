@@ -235,6 +235,43 @@ def plot_information_output_and_objective(Is: List[float],
     plt.show()
 
 
+def compute_mutual_information(Pmc: np.ndarray,
+                               Pc: np.ndarray,
+                               Pm: np.ndarray,
+                               c: np.ndarray,
+                               m: np.ndarray) -> float:
+    """
+    Computes the mutual information of the given conditional and marginal distributions.
+
+    :param Pmc: The conditional distribution P(m | c) over methylation levels given ligand concentrations.
+    :param Pc: The marginal distribution P(c) over ligand concentrations.
+    :param Pm: The marginal distribution P(m) over methylation levels.
+    :param c: A matrix of ligand concentrations (differing across the columns).
+    :param m: A matrix of methylation levels (differing across the rows).
+    :return: The mutual information of the given conditional and marginal distributions.
+    """
+    return integrate(Pc * integrate(Pmc * np.log2(EPS + Pmc / (EPS + Pm)), m, axis=0), c, axis=1)[0]
+
+
+def compute_average_output(output: np.ndarray,
+                           Pmc: np.ndarray,
+                           Pc: np.ndarray,
+                           c: np.ndarray,
+                           m: np.ndarray) -> float:
+    """
+    Computes the average output given the conditional and marginal distributions.
+
+    :param output: A matrix containing the output of interest, which is either drift or entropy production,
+                   for different methylation levels (rows) and ligand concentrations (columns).
+    :param Pmc: The conditional distribution P(m | c) over methylation levels given ligand concentrations.
+    :param Pc: The marginal distribution P(c) over ligand concentrations.
+    :param c: A matrix of ligand concentrations (differing across the columns).
+    :param m: A matrix of methylation levels (differing across the rows).
+    :return: The average output given the conditional and marginal distributions.
+    """
+    return integrate(Pc * integrate(Pmc * output, m, axis=0), c, axis=1)[0]
+
+
 def determine_information_and_output(output: np.ndarray,
                                      Pc: np.ndarray,
                                      c: np.ndarray,
@@ -268,8 +305,6 @@ def determine_information_and_output(output: np.ndarray,
                - Pms (List[np.ndarray]): a list of marginal distributions P(m)
                - lams (np.ndarray): a numpy array of lambda values
     """
-    # TODO: change convergence to be based on objective function rather than P(m)?
-    # error_tol = 1e-2  # Error tolerance for convergence (1e-4, 1e-5)  TODO: remove?
     Imins, outmaxes, Pmcs, Pms = [], [], [], []
     lams = np.logspace(lambda_min, lambda_max, lambda_num)
     for lam in lams:
@@ -289,10 +324,7 @@ def determine_information_and_output(output: np.ndarray,
         # Initial guess for conditional distribution P(m | c) over methylation levels given ligand concentrations
         Pmc = compute_Pmc(Pm=Pm, m=m, exp_lam_output=exp_lam_output)
 
-        for i in trange(iter_max):
-            # Save previous P(m)  TODO: remove?
-            # Pm_old = Pm
-
+        for _ in trange(iter_max):
             # Compute new P(m)
             Pm = compute_Pm(Pmc=Pmc, Pc=Pc, c=c)
 
@@ -301,35 +333,25 @@ def determine_information_and_output(output: np.ndarray,
 
             # Keep track of I, out, and objective function across iterations
             if verbosity >= 2:
-                Imin = integrate(Pc * integrate(Pmc * np.log2(EPS + Pmc / (EPS + Pm)), m, axis=0), c, axis=1)
-                outmax = integrate(Pc * integrate(Pmc * output, m, axis=0), c, axis=1)
-                objective = Imin - lam * outmax
+                I = compute_mutual_information(Pmc=Pmc, Pc=Pc, Pm=Pm, c=c, m=m)
+                out = compute_average_output(output=output, Pmc=Pmc, Pc=Pc, c=c, m=m)
+                objective = I - lam * out
 
-                Is.append(Imin[0])
-                outs.append(outmax[0])
-                objectives.append(objective[0])
+                Is.append(I)
+                outs.append(out)
+                objectives.append(objective)
 
-            # Extract one column of Pm and Pm_old to represent new P(m) and old P(m) since all columns are identical  TODO: remove?
-            # Pm_col, Pm_old_col = Pm[:, 0], Pm_old[:, 0]
+        # Compute the minimum mutual information (Taylor equation 1)
+        Imin = compute_mutual_information(Pmc=Pmc, Pc=Pc, Pm=Pm, c=c, m=m)
 
-            # If difference between new P(m) and old P(m) is below an error tolerance, then algorithm has converged  TODO: remove
-            # if np.linalg.norm(Pm_col - Pm_old_col) <= error_tol or i == iter_max - 1:
+        # Compute maximum mean output, which is either drift or entropy production (Taylor equation 4)
+        outmax = compute_average_output(output=output, Pmc=Pmc, Pc=Pc, c=c, m=m)
 
-            if i == iter_max - 1:
-                print(f'Converged for lambda = {lam:.2f} after {i + 1} iterations')
-
-                # Compute the minimum mutual information (Taylor equation 1)
-                Imin = integrate(Pc * integrate(Pmc * np.log2(EPS + Pmc / (EPS + Pm)), m, axis=0), c, axis=1)
-
-                # Compute maximum mean output, which is either drift or entropy production (Taylor equation 4)
-                outmax = integrate(Pc * integrate(Pmc * output, m, axis=0), c, axis=1)
-
-                # Save Imin, outmax, and Pmc (only include 0th element since all elements are the same)
-                Imins.append(Imin[0])
-                outmaxes.append(outmax[0])
-                Pmcs.append(Pmc)
-                Pms.append(Pm)
-                break
+        # Save Imin, outmax, and Pmc (only include 0th element since all elements are the same)
+        Imins.append(Imin)
+        outmaxes.append(outmax)
+        Pmcs.append(Pmc)
+        Pms.append(Pm)
 
         # Plot I, out, and objective function across iterations
         if verbosity >= 2:
