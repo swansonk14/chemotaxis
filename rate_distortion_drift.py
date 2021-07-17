@@ -32,8 +32,8 @@ class Args(Tap):
     """Maximum value of lambda in log space (i.e., min lambda = 10^{lambda_max})."""
     lambda_num: int = 9
     """Number of lambda values between lambda_min and lambda_max."""
-    nu: float = 0.01
-    """Lagrangian nu applied to the entropy. Only relevant for output_type == 'drift - entropy'."""
+    mu: float = 0.01
+    """Lagrangian mu applied to the entropy. Only relevant for output_type == 'drift - entropy'."""
     ligand_gradient: float = 0.1
     """The relative gradient of the ligand concentration."""
     verbosity: Literal[0, 1, 2] = 0
@@ -412,7 +412,7 @@ def run_simulation(args: Args) -> None:
     elif args.output_type == 'entropy':
         output = -entropy_production
     elif args.output_type == 'drift - entropy':
-        output = drift - args.nu * entropy_production
+        output = drift - args.mu * entropy_production
     else:
         raise ValueError(f'Output type "{args.output_type}" is not supported.')
 
