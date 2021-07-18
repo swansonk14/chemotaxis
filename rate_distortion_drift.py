@@ -152,6 +152,7 @@ def plot_output(output: np.ndarray,
                 output_type: str,
                 c: np.ndarray,
                 m: np.ndarray,
+                plot_max: bool = False,
                 save_path: Path = None) -> None:
     """
     Plots the output given the ligand concentration and methylation level.
@@ -161,13 +162,17 @@ def plot_output(output: np.ndarray,
     :param output_type: The name of the type of output.
     :param c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
+    :param plot_max: Whether to plot the maximum y value for each x value.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
     plt.clf()
     plt.contourf(np.log(c), m, output, levels=64, cmap=CMAP)
     plt.colorbar()
-    maxi = np.argmax(output, axis=0)  # Index in each column corresponding to maximum
-    plt.plot(np.log(c[0]), m[maxi, 0], color='red', label='max')
+
+    if plot_max:
+        maxi = np.argmax(output, axis=0)  # Index in each column corresponding to maximum
+        plt.plot(np.log(c[0]), m[maxi, 0], color='red', label='max')
+
     plt.title(f'{output_type.title()} for given ligand concentration and methylation level')
     plt.legend(loc='upper left')
     plt.xlabel(r'Ligand concentration $\log(c)$')
@@ -441,7 +446,7 @@ def plot_distributions_across_lambdas(distributions: List[np.ndarray],
     size = int(np.ceil(np.sqrt(len(lams))))  # Number of rows/columns in a square that can hold all the plots
 
     plt.clf()
-    fig, axes = plt.subplots(nrows=size, ncols=size, figsize=2 * np.array([6.4, 4.8]))
+    fig, axes = plt.subplots(nrows=size, ncols=size, figsize=2.25 * np.array([6.4, 4.8]))
     axes = [axes] if size == 1 else axes.flat
 
     for ax, distribution, lam, Imin, outmax in tqdm(zip(axes, distributions, lams, Imins, outmaxes), total=len(lams)):
@@ -492,6 +497,7 @@ def run_simulation(args: Args) -> None:
             output_type=args.output_type,
             c=c,
             m=m,
+            plot_max=True,
             save_path=args.save_dir / f'{args.output_type}.png' if args.save_dir is not None else None
         )
 
