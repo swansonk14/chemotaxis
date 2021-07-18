@@ -172,9 +172,9 @@ def plot_output(output: np.ndarray,
     if plot_max:
         maxi = np.argmax(output, axis=0)  # Index in each column corresponding to maximum
         plt.plot(np.log(c[0]), m[maxi, 0], color='red', label='max')
+        plt.legend(loc='upper left')
 
-    plt.title(f'{output_type.title()} for given ligand concentration and methylation level')
-    plt.legend(loc='upper left')
+    plt.title(f'{output_type} for given ligand concentration and methylation level')
     plt.xlabel(r'Ligand concentration $\log(c)$')
     plt.ylabel('Methylation level $m$')
 
@@ -254,7 +254,7 @@ def plot_information_output_and_objective(Is: List[float],
     ax1.legend()
     ax2.legend()
     plt.xlabel('Iteration')
-    ax0.set_title(rf'I, out, and objective function for $\lambda = {lam:.2f}$')
+    ax0.set_title(rf'I, out, and objective function for $\lambda = {lam:.2e}$')
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -337,7 +337,7 @@ def determine_information_and_output(output: np.ndarray,
     Imins, outmaxes, Pmcs, Pms = [], [], [], []
     lams = np.logspace(lambda_min, lambda_max, lambda_num)
     for lam in lams:
-        print(f'Lambda = {lam:.2f}')
+        print(f'Lambda = {lam:.2e}')
         # Keep track of I, out, and objective function across iterations
         Is, outs, objectives = [], [], []
 
@@ -409,8 +409,8 @@ def plot_information_and_output(Imins: List[float],
     """
     plt.clf()
     plt.plot(Imins, outmaxes, 'x')
-    plt.title(f'{output_type.title()} vs Mutual Information')
-    plt.ylabel(output_type.title())
+    plt.title(f'{output_type} vs Mutual Information')
+    plt.ylabel(output_type)
     plt.xlabel('Mutual Information $I(m; c)$ (bits)')
 
     if save_path is not None:
@@ -452,7 +452,7 @@ def plot_distributions_across_lambdas(distributions: List[np.ndarray],
     for ax, distribution, lam, Imin, outmax in tqdm(zip(axes, distributions, lams, Imins, outmaxes), total=len(lams)):
         im = ax.contourf(log_c, m, distribution, levels=64, cmap=CMAP)
         fig.colorbar(im, ax=ax)
-        ax.title.set_text(rf'$\lambda={lam:.2f}, I={Imin:.2f}, {output_type}={outmax:.2f}$')
+        ax.title.set_text(rf'$\lambda=${lam:.2e}, I$=${Imin:.2e}, {output_type}$=${outmax:.2e}')
 
     fig.suptitle(title)
     fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical')  # y label
@@ -494,7 +494,7 @@ def run_simulation(args: Args) -> None:
     if args.verbosity >= 1:
         plot_output(
             output=output,
-            output_type=args.output_type,
+            output_type=args.output_type.title(),
             c=c,
             m=m,
             plot_max=True,
@@ -532,7 +532,7 @@ def run_simulation(args: Args) -> None:
     plot_information_and_output(
         Imins=Imins,
         outmaxes=outmaxes,
-        output_type=args.output_type,
+        output_type=args.output_type.title(),
         save_path=args.save_dir / f'{args.output_type}_vs_information.png' if args.save_dir is not None else None
     )
 
