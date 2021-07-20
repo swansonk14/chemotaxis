@@ -511,7 +511,7 @@ def plot_information_and_output(infos: List[float],
                                 output_type: str,
                                 save_path: Path = None) -> None:
     """
-    Plot the maximum mean output vs the minimum mutual information.
+    Plot the (maximum/minimum) mean output vs the (minimum) mutual information.
 
     :param infos: A list of (minimum) mutual information values.
     :param avg_outs: A list of (maximum/minimum) average output values.
@@ -522,6 +522,35 @@ def plot_information_and_output(infos: List[float],
     plt.title(f'{output_type} vs Mutual Information')
     plt.ylabel(output_type)
     plt.xlabel('Mutual Information $I(m; c)$ (bits)')
+
+    if save_path is not None:
+        plt.savefig(save_path, dpi=DPI)
+    else:
+        plt.show()
+
+    plt.close()
+
+
+def plot_information_and_outputs_3d(info_grid: np.ndarray,
+                                    avg_drift_grid: np.ndarray,
+                                    avg_entropy_grid: np.ndarray,
+                                    save_path: Path = None) -> None:
+    """
+    Plot the (maximum) average drift vs the (minimum) average entropy vs the (minimum) mutual information.
+
+    :param info_grid: A matrix of mutual information values for different lambda and mu values.
+    :param avg_drift_grid: A matrix of average drift values for different lambda and mu values.
+    :param avg_entropy_grid: A matrix of average entropy values for different lambda and mu values.
+    :param save_path: Path where the plot will be saved (if None, displayed instead).
+    """
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    ax.scatter(info_grid.flatten(), avg_drift_grid.flatten(), avg_entropy_grid.flatten())
+
+    ax.set_xlabel('Mutual Information $I(m; c)$ (bits)')
+    ax.set_ylabel('Drift')
+    ax.set_zlabel('Entropy')
+    ax.set_title('Drift vs Entropy vs Mutual Information')
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -646,7 +675,14 @@ def run_simulation(args: Args) -> None:
 
     # Plot average output(s) vs mutual information and plot distributions
     if args.outputs == {'drift', 'entropy'}:
-        raise NotImplementedError
+        plot_information_and_outputs_3d(
+            info_grid=info_grid,
+            avg_drift_grid=avg_drift_grid,
+            avg_entropy_grid=avg_entropy_grid,
+            save_path=args.save_dir / 'drift_vs_entropy_vs_information.png' if args.save_dir is not None else None
+        )
+
+        raise NotImplementedError  # TODO: implement 3D plots here
     else:
         # Select output
         if args.outputs == {'drift'}:
