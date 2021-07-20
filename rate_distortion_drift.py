@@ -35,9 +35,9 @@ class Args(Tap):
     """Maximum value of Lagrangian lambda for drift in log space (i.e., min lambda = 10^{lambda_max})."""
     lambda_num: int = 9
     """Number of lambda values between lambda_min and lambda_max."""
-    mu_min: float = -1.0
+    mu_min: float = -2.0
     """Minimum value of Lagrangian mu for entropy in log space (i.e., min mu = 10^{mu_min})."""
-    mu_max: float = 3.0
+    mu_max: float = 2.0
     """Maximum value of Lagrangian mu for entropy in log space (i.e., min mu = 10^{mu_max})."""
     mu_num: int = 9
     """Number of mu values between mu_min and mu_max."""
@@ -613,10 +613,11 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
                                              m: np.ndarray,
                                              lam_grid: np.ndarray,
                                              mu_grid: np.ndarray,
-                                             info_grid: np.ndarray,
-                                             avg_drift_grid: np.ndarray,
-                                             avg_entropy_grid: np.ndarray,
                                              title: str,
+                                             info_grid: np.ndarray = None,
+                                             avg_drift_grid: np.ndarray = None,
+                                             avg_entropy_grid: np.ndarray = None,
+                                             plot_max: bool = False,
                                              save_path: Path = None) -> None:
     """
     Plots the distributions over methylation levels and ligand concentrations across parameter values.
@@ -627,10 +628,11 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
     :param m: A matrix of methylation levels (differing across the rows).
     :param lam_grid: A numpy array of Lagrangian mu values differing across the rows.
     :param mu_grid: A numpy array of Lagrangian mu values differing across the columns.
+    :param title: The title of the plot.
     :param info_grid: A matrix of mutual information values for different lambda and mu values.
     :param avg_drift_grid: A matrix of average drift values for different lambda and mu values.
     :param avg_entropy_grid: A matrix of average entropy values for different lambda and mu values.
-    :param title: The title of the plot.
+    :param plot_max: Whether to plot the maximum y value for each x value.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
     log_c = np.log(c)
@@ -652,9 +654,14 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
         ax = axes[i, j]
         im = ax.contourf(log_c, m, distribution_grid[i, j], levels=64, cmap=CMAP)
         fig.colorbar(im, ax=ax)
-        ax.set_title(f'I$=${info_grid[i, j]:.2e}, '
-                     f'drift$=${avg_drift_grid[i, j]:.2e}, '
-                     f'entropy$=${avg_entropy_grid[i, j]:.2e}')
+        ax.set_title((f'I$=${info_grid[i, j]:.2e}, ' if info_grid is not None else '') +
+                     (f'drift$=${avg_drift_grid[i, j]:.2e}, ' if avg_drift_grid is not None else '') +
+                     (f'entropy$=${avg_entropy_grid[i, j]:.2e}' if avg_entropy_grid is not None else ''))
+
+        if plot_max:
+            maxi = np.argmax(distribution_grid[i, j], axis=0)  # Index in each column corresponding to maximum
+            ax.plot(np.log(c[0]), m[maxi, 0], color='red', label='max')
+            ax.legend(loc='upper left')
 
         if i == nrows - 1:
             ax.set_xlabel(rf'$\mu=${mu_grid[i, j]:.2e}')
@@ -680,6 +687,9 @@ def run_simulation(args: Args) -> None:
     if args.save_dir is not None:
         args.save(args.save_dir / 'args.json')
 
+    # Get grid of Lagrangian lambda and mu values
+    lam_grid, mu_grid = args.lagrangian_grid
+
     # Set up the methylation levels and ligand concentrations
     m, c = set_up_methylation_levels_and_ligand_concentrations()
 
@@ -688,7 +698,7 @@ def run_simulation(args: Args) -> None:
 
     # Plot outputs
     if args.verbosity >= 1:
-        if 'drift' in args.outputs:
+        if args.outputs == {'drift'}:
             plot_output(
                 output=drift,
                 output_type='Drift',
@@ -698,7 +708,7 @@ def run_simulation(args: Args) -> None:
                 save_path=args.save_dir / 'drift.png' if args.save_dir is not None else None
             )
 
-        if 'entropy' in args.outputs:
+        elif args.outputs == {'entropy'}:
             plot_output(
                 output=entropy,
                 output_type='Entropy',
@@ -708,7 +718,19 @@ def run_simulation(args: Args) -> None:
                 save_path=args.save_dir / 'entropy.png' if args.save_dir is not None else None
             )
 
-        # TODO: Plot entropy and drift across lambda and mu values
+        elif args.outputs == {'drift', 'entropy'}:
+            # Plot lambda * drift - mu * entropy
+            plot_distributions_across_parameter_grid(
+                distribution_grid=lam_grid.reshape((*lam_grid.shape, 1, 1)) * drift.reshape((1, 1, *drift.shape)) -
+                                  mu_grid.reshape((*mu_grid.shape, 1, 1)) * entropy.reshape((1, 1, *entropy.shape)),
+                c=c,
+                m=m,
+                lam_grid=lam_grid,
+                mu_grid=mu_grid,
+                title=r'$\lambda \cdot$ drift $-\ \mu \cdot$ entropy',
+                plot_max=True,
+                save_path=args.save_dir / 'drift-entropy.png' if args.save_dir is not None else None
+            )
 
     # Set up marginal distribution over ligand concentrations P(c)
     Pc = set_up_ligand_concentration_distribution(c=c, ligand_gradient=args.ligand_gradient)
@@ -722,9 +744,6 @@ def run_simulation(args: Args) -> None:
             m=m,
             save_path=args.save_dir / 'pc.png' if args.save_dir is not None else None
         )
-
-    # Get grid of Lagrangian lambda and mu values
-    lam_grid, mu_grid = args.lagrangian_grid
 
     # Determine minimum mutual information and maximum mean output for multiple parameter values
     info_grid, avg_drift_grid, avg_entropy_grid, Pmc_grid, Pm_grid = grid_search_information_and_output(
