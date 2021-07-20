@@ -572,7 +572,6 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
                                          save_path: Path = None) -> None:
     """
     Plots the distributions over methylation levels and ligand concentrations across parameter values.
-
     :param distributions: An array of probability distributions over methylation levels
                           and ligand concentrations across parameter values.
     :param c: A matrix of ligand concentrations (differing across the columns).
@@ -596,6 +595,72 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
         im = ax.contourf(log_c, m, distribution, levels=64, cmap=CMAP)
         fig.colorbar(im, ax=ax)
         ax.title.set_text(f'{parameter_name}$=${parameter:.2e}, I$=${Imin:.2e}, {output_type}$=${outmax:.2e}')
+
+    fig.suptitle(title)
+    fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical')  # y label
+    fig.text(0.5, 0.04, r'Ligand concentration $\log(c)$', ha='center')  # x label
+
+    if save_path is not None:
+        plt.savefig(save_path, dpi=DPI)
+    else:
+        plt.show()
+
+    plt.close()
+
+
+def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
+                                             c: np.ndarray,
+                                             m: np.ndarray,
+                                             lam_grid: np.ndarray,
+                                             mu_grid: np.ndarray,
+                                             info_grid: np.ndarray,
+                                             avg_drift_grid: np.ndarray,
+                                             avg_entropy_grid: np.ndarray,
+                                             title: str,
+                                             save_path: Path = None) -> None:
+    """
+    Plots the distributions over methylation levels and ligand concentrations across parameter values.
+
+    :param distribution_grid: A matrix of probability distributions over methylation levels
+                              and ligand concentrations across parameter values.
+    :param c: A matrix of ligand concentrations (differing across the columns).
+    :param m: A matrix of methylation levels (differing across the rows).
+    :param lam_grid: A numpy array of Lagrangian mu values differing across the rows.
+    :param mu_grid: A numpy array of Lagrangian mu values differing across the columns.
+    :param info_grid: A matrix of mutual information values for different lambda and mu values.
+    :param avg_drift_grid: A matrix of average drift values for different lambda and mu values.
+    :param avg_entropy_grid: A matrix of average entropy values for different lambda and mu values.
+    :param title: The title of the plot.
+    :param save_path: Path where the plot will be saved (if None, displayed instead).
+    """
+    log_c = np.log(c)
+    nrows, ncols = lam_grid.shape
+    size = lam_grid.size
+
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=2.25 * np.array([6.4, 4.8]))
+
+    # Ensure axes is a 2d array
+    if size == 1:
+        axes = np.array([[axes]])
+    elif nrows == 1:
+        axes = axes[np.newaxis, :]
+    elif ncols == 1:
+        axes = axes[:, np.newaxis]
+
+    # Plot distributions
+    for i, j in tqdm(product(range(nrows), range(ncols)), total=size):
+        ax = axes[i, j]
+        im = ax.contourf(log_c, m, distribution_grid[i, j], levels=64, cmap=CMAP)
+        fig.colorbar(im, ax=ax)
+        ax.set_title(f'I$=${info_grid[i, j]:.2e}, '
+                     f'drift$=${avg_drift_grid[i, j]:.2e}, '
+                     f'entropy$=${avg_entropy_grid[i, j]:.2e}')
+
+        if i == nrows - 1:
+            ax.set_xlabel(rf'$\mu=${mu_grid[i, j]:.2e}')
+
+        if j == 0:
+            ax.set_ylabel(rf'$\lambda=${lam_grid[i, j]:.2e}')
 
     fig.suptitle(title)
     fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical')  # y label
@@ -643,6 +708,8 @@ def run_simulation(args: Args) -> None:
                 save_path=args.save_dir / 'entropy.png' if args.save_dir is not None else None
             )
 
+        # TODO: Plot entropy and drift across lambda and mu values
+
     # Set up marginal distribution over ligand concentrations P(c)
     Pc = set_up_ligand_concentration_distribution(c=c, ligand_gradient=args.ligand_gradient)
 
@@ -675,6 +742,7 @@ def run_simulation(args: Args) -> None:
 
     # Plot average output(s) vs mutual information and plot distributions
     if args.outputs == {'drift', 'entropy'}:
+        # Plot average drift vs average entropy vs mutual information
         plot_information_and_outputs_3d(
             info_grid=info_grid,
             avg_drift_grid=avg_drift_grid,
@@ -682,7 +750,32 @@ def run_simulation(args: Args) -> None:
             save_path=args.save_dir / 'drift_vs_entropy_vs_information.png' if args.save_dir is not None else None
         )
 
-        raise NotImplementedError  # TODO: implement 3D plots here
+        # Set up distribution plotting function across Lagrangian values
+        plot_dist_fn = partial(
+            plot_distributions_across_parameter_grid,
+            c=c,
+            m=m,
+            lam_grid=lam_grid,
+            mu_grid=mu_grid,
+            info_grid=info_grid,
+            avg_drift_grid=avg_drift_grid,
+            avg_entropy_grid=avg_entropy_grid,
+        )
+
+        # Plot conditional distribution across Lagrangian values
+        plot_dist_fn(
+            distribution_grid=Pmc_grid,
+            title='Conditional distribution $P(m|c)$',
+            save_path=args.save_dir / 'pmc.png' if args.save_dir is not None else None
+        )
+
+        # Plot marginal distribution across Lagrangian values
+        if args.verbosity >= 1:
+            plot_dist_fn(
+                distribution_grid=Pm_grid,
+                title='Marginal distribution $P(m)$',
+                save_path=args.save_dir / 'pm.png' if args.save_dir is not None else None
+            )
     else:
         # Select output
         if args.outputs == {'drift'}:
