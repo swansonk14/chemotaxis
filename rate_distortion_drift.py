@@ -12,8 +12,10 @@ References:
                     Clausznitzer et al., PLOS Computational Biology, 2010
                     https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1000784
 """
+from functools import partial
+from itertools import product
 from pathlib import Path
-from typing import List, Literal, Tuple
+from typing import List, Literal, Set, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,24 +25,65 @@ from tqdm import tqdm, trange
 
 
 class Args(Tap):
-    output_type: Literal['drift', 'entropy', 'drift-entropy'] = 'drift'
-    """The output whose mutual information will be computed."""
-    iter_max: int = 100
+    outputs: Set[Literal['drift', 'entropy']] = {'drift', 'entropy'}
+    """The outputs to optimize for when minimizing entropy. Drift is maximized while entropy is minimized."""
+    num_iters: int = 100
     """Maximum number of iterations of the algorithm."""
     lambda_min: float = -1.0
-    """Minimum value of lambda in log space (i.e., min lambda = 10^{lambda_min})."""
+    """Minimum value of Lagrangian lambda for drift in log space (i.e., min lambda = 10^{lambda_min})."""
     lambda_max: float = 3.0
-    """Maximum value of lambda in log space (i.e., min lambda = 10^{lambda_max})."""
+    """Maximum value of Lagrangian lambda for drift in log space (i.e., min lambda = 10^{lambda_max})."""
     lambda_num: int = 9
     """Number of lambda values between lambda_min and lambda_max."""
-    mu: float = 0.05
-    """Lagrangian mu applied to the entropy. Only relevant for output_type == 'drift-entropy'."""
+    mu_min: float = -1.0
+    """Minimum value of Lagrangian mu for entropy in log space (i.e., min mu = 10^{mu_min})."""
+    mu_max: float = 3.0
+    """Maximum value of Lagrangian mu for entropy in log space (i.e., min mu = 10^{mu_max})."""
+    mu_num: int = 9
+    """Number of mu values between mu_min and mu_max."""
     ligand_gradient: float = 0.1
     """The relative gradient of the ligand concentration."""
     verbosity: Literal[0, 1, 2] = 1
     """Verbosity level. Higher means more verbose."""
     save_dir: Path = None
     """Directory where plots and arguments will be saved (if None, displayed instead)."""
+
+    @property
+    def lams(self) -> np.ndarray:
+        """
+        Gets the range of values for the Lagrangian lambda for drift.
+
+        :return: A numpy array with the range of lambda values (or just 0 if drift is not an output).
+        """
+        if 'drift' in self.outputs:
+            return np.logspace(self.lambda_min, self.lambda_max, self.lambda_num)
+
+        return np.zeros(1)
+
+    @property
+    def mus(self) -> np.ndarray:
+        """
+        Gets the range of values for the Lagrangian mu for entropy.
+
+        :return: A numpy array with the range of mu values (or just 0 if entropy is not an output).
+        """
+        if 'entropy' in self.outputs:
+            return np.logspace(self.mu_min, self.mu_max, self.mu_num)
+
+        return np.zeros(1)
+
+    @property
+    def lagrangian_grid(self) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Gets grids of Lagrangian lambda and mu values.
+
+        :return: A tuple containing:
+                   - lam_grid (np.ndarray): A numpy array of Lagrangian lambda values differing across the rows
+                   - mu_grid (np.ndarray): A numpy array of Lagrangian mu values differing across the columns
+        """
+        mu_grid, lam_grid = np.meshgrid(self.mus, self.lams)
+
+        return lam_grid, mu_grid
 
     def process_args(self) -> None:
         if self.save_dir is not None:
@@ -58,12 +101,12 @@ def set_up_methylation_levels_and_ligand_concentrations() -> Tuple[np.ndarray, n
     Sets up methylation levels and ligand concentrations.
 
     :return: A tuple containing:
-               - m (matrix): methylation levels (differing across the rows)
-               - c (matrix): ligand concentrations (differing across the columns)
+               - m (np.ndarray): a matrix of methylation levels (differing across the rows)
+               - c (np.ndarray): a matrix of ligand concentrations (differing across the columns)
     """
     num_methylation_levels = num_ligand_concentrations = 1000  # Number of levels/concentrations
-    mi = np.linspace(0, 8, num_methylation_levels)  # Methylation levels TODO: (0, 15)
-    ci = np.logspace(-3, 3, num_ligand_concentrations)  # Ligand concentrations (log space) TODO: (-3, 6)
+    mi = np.linspace(0, 8, num_methylation_levels)  # Methylation levels
+    ci = np.logspace(-3, 3, num_ligand_concentrations)  # Ligand concentrations (log space)
 
     c, m = np.meshgrid(ci, mi)  # Mesh grid of ligand concentrations and methylation levels
 
@@ -217,45 +260,52 @@ def compute_Pm(Pmc: np.ndarray,
 
 def compute_Pmc(Pm: np.ndarray,
                 m: np.ndarray,
-                exp_lam_output: np.ndarray) -> np.ndarray:
+                exp_output: np.ndarray) -> np.ndarray:
     """
     Given the marginal distribution P(m), computes the conditional distribution P(m | c).
 
     :param Pm: The marginal distribution P(m) over methylation levels.
     :param m: A matrix of methylation levels (differing across the rows).
-    :param exp_lam_output: A matrix containing exp(lam * output).
+    :param exp_output: A matrix containing the exponential output.
     :return: The conditional distribution P(m | c) over methylation levels given ligand concentrations,
              which is a matrix of size (num_methylation_levels, num_ligand_concentrations).
     """
-    pmc = Pm * exp_lam_output
+    pmc = Pm * exp_output
     Pmc = pmc / integrate(pmc, m, axis=0)
 
     return Pmc
 
 
-def plot_information_output_and_objective(Is: List[float],
-                                          outs: List[float],
-                                          objectives: List[float],
-                                          lam: float,
-                                          save_path: Path = None) -> None:
+def plot_values_across_iterations(infos: List[float],
+                                  avg_drifts: List[float],
+                                  avg_entropies: List[float],
+                                  objectives: List[float],
+                                  lam: float,
+                                  mu: float,
+                                  save_path: Path = None) -> None:
     """
-    Plots the mutual information, output, and objective function across iterations.
+    Plots the mutual information, average drift, average entropy, and objective function across iterations.
 
-    :param Is: A list of mutual information values across iterations.
-    :param outs: A list of output values across iterations.
+    :param infos: A list of mutual information values across iterations.
+    :param avg_drifts: A list of average drift values across iterations.
+    :param avg_entropies: A list of average entropy values across iterations.
     :param objectives: A list of objective function values across iterations.
-    :param lam: Lagrangian parameter lambda.
+    :param lam: The Lagrangian lambda for drift.
+    :param mu: The Lagrangian mu for entropy.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
-    fig, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex=True)
-    ax0.scatter(np.arange(len(Is)), Is, color='red', label='I', s=3)
-    ax1.scatter(np.arange(len(outs)), outs, color='blue', label='out', s=3)
-    ax2.scatter(np.arange(len(objectives)), objectives, color='green', label='objective', s=3)
-    ax0.legend()
-    ax1.legend()
-    ax2.legend()
+    fig, axes = plt.subplots(4, 1, sharex=True)
+
+    axes[0].scatter(np.arange(len(infos)), infos, color='red', label='information', s=3)
+    axes[1].scatter(np.arange(len(avg_drifts)), avg_drifts, color='blue', label='drift', s=3)
+    axes[2].scatter(np.arange(len(avg_entropies)), avg_entropies, color='purple', label='entropy', s=3)
+    axes[3].scatter(np.arange(len(objectives)), objectives, color='green', label='objective', s=3)
+
+    for ax in axes:
+        ax.legend()
+
     plt.xlabel('Iteration')
-    ax0.set_title(rf'I, out, and objective function for $\lambda = {lam:.2e}$')
+    axes[0].set_title(rf'Values across iterations for $\lambda = {lam:.2e}, \mu = {mu:.2e}$')
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -302,115 +352,173 @@ def compute_average_output(output: np.ndarray,
     return integrate(Pc * integrate(Pmc * output, m, axis=0), c, axis=1)[0]
 
 
-def determine_information_and_output(output: np.ndarray,
+def determine_information_and_output(drift: np.ndarray,
+                                     entropy: np.ndarray,
                                      Pc: np.ndarray,
                                      c: np.ndarray,
                                      m: np.ndarray,
-                                     iter_max: int,
-                                     lambda_min: float,
-                                     lambda_max: float,
-                                     lambda_num: int,
+                                     lam: float,
+                                     mu: float,
+                                     num_iters: int,
                                      verbosity: int,
-                                     save_dir: Path = None) -> Tuple[List[float],
-                                                                     List[float],
-                                                                     List[np.ndarray],
-                                                                     List[np.ndarray],
-                                                                     np.ndarray]:
+                                     save_dir: Path = None) -> Tuple[float, float, float, np.ndarray, np.ndarray]:
     """
-    Iterates an algorithm to determine the minimum mutual information and maximum mean fitness for different parameters.
+    Iterates an algorithm to determine the minimum mutual information and maximum mean fitness.
 
-    :param output: A matrix containing the output of interest
+    :param drift: A numpy array containing the drift
+                   for different methylation levels (rows) and ligand concentrations (columns).
+    :param entropy: A numpy array containing the entropy
                    for different methylation levels (rows) and ligand concentrations (columns).
     :param Pc: The marginal distribution P(c) over ligand concentrations.
     :param c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
-    :param iter_max: Maximum number of iterations of the algorithm.
-    :param lambda_min: Minimum value of lambda in log space (i.e., min lambda = 10^{lambda_min}).
-    :param lambda_max: Maximum value of lambda in log space (i.e., min lambda = 10^{lambda_max}).
-    :param lambda_num: Number of lambda values between lambda_min and lambda_max.
+    :param lam: The Lagrangian lambda for drift.
+    :param mu: The Lagrangian mu for entropy.
+    :param num_iters: Maximum number of iterations of the algorithm.
     :param verbosity: Verbosity level. Higher means more verbose.
     :param save_dir: Directory where the plot will be saved (if None, displayed instead).
     :return: A tuple containing:
-               - Imins (List[float]): a list of minimum mutual information values
-               - outmaxes (List[float]): a list of maximum mean output values
-               - Pmcs (List[np.ndarray]): a list of  conditional distributions P(m | c)
-               - Pms (List[np.ndarray]): a list of marginal distributions P(m)
-               - lams (np.ndarray): a numpy array of lambda values
+               - info (float): the (minimum) mutual information
+               - avg_drift (float): the (maximum) average drift
+               - avg_entropy (float): the (minimum) average entropy
+               - Pmc (np.ndarray): the conditional distributions P(m | c)
+               - Pm (np.ndarray): the marginal distributions P(m)
     """
-    Imins, outmaxes, Pmcs, Pms = [], [], [], []
-    lams = np.logspace(lambda_min, lambda_max, lambda_num)
-    for lam in lams:
-        print(f'Lambda = {lam:.2e}')
+    # Keep track of values across iterations (if verbosity >= 2)
+    infos, avg_drifts, avg_entropies, objectives = [], [], [], []
+
+    # Initial guess for marginal distribution P(m) over methylation levels
+    Pm = np.ones(Pc.shape)
+
+    # Normalize P(m)
+    Pm = Pm / integrate(Pm, m, axis=0)
+
+    # Precompute exp(lam * drift - mu * entropy)
+    exp_output = np.exp(lam * drift - mu * entropy)
+
+    # Initial guess for conditional distribution P(m | c) over methylation levels given ligand concentrations
+    Pmc = compute_Pmc(Pm=Pm, m=m, exp_output=exp_output)
+
+    # Iterate algorithm
+    for _ in trange(num_iters):
+        # Compute new P(m)
+        Pm = compute_Pm(Pmc=Pmc, Pc=Pc, c=c)
+
+        # Compute new P(m | c)
+        Pmc = compute_Pmc(Pm=Pm, m=m, exp_output=exp_output)
+
         # Keep track of I, out, and objective function across iterations
-        Is, outs, objectives = [], [], []
-
-        # Initial guess for marginal distribution P(m) over methylation levels
-        Pm = np.ones(Pc.shape)
-
-        # Normalize P(m)
-        Pm = Pm / integrate(Pm, m, axis=0)
-
-        # Precompute exp(lam * output)
-        exp_lam_output = np.exp(lam * output)
-
-        # Initial guess for conditional distribution P(m | c) over methylation levels given ligand concentrations
-        Pmc = compute_Pmc(Pm=Pm, m=m, exp_lam_output=exp_lam_output)
-
-        for _ in trange(iter_max):
-            # Compute new P(m)
-            Pm = compute_Pm(Pmc=Pmc, Pc=Pc, c=c)
-
-            # Compute new P(m | c)
-            Pmc = compute_Pmc(Pm=Pm, m=m, exp_lam_output=exp_lam_output)
-
-            # Keep track of I, out, and objective function across iterations
-            if verbosity >= 2:
-                I = compute_mutual_information(Pmc=Pmc, Pc=Pc, Pm=Pm, c=c, m=m)
-                out = compute_average_output(output=output, Pmc=Pmc, Pc=Pc, c=c, m=m)
-                objective = I - lam * out
-
-                Is.append(I)
-                outs.append(out)
-                objectives.append(objective)
-
-        # Compute the minimum mutual information (Taylor equation 1)
-        Imin = compute_mutual_information(Pmc=Pmc, Pc=Pc, Pm=Pm, c=c, m=m)
-
-        # Compute maximum mean output (Taylor equation 4)
-        outmax = compute_average_output(output=output, Pmc=Pmc, Pc=Pc, c=c, m=m)
-
-        # Save Imin, outmax, and Pmc (only include 0th element since all elements are the same)
-        Imins.append(Imin)
-        outmaxes.append(outmax)
-        Pmcs.append(Pmc)
-        Pms.append(Pm)
-
-        # Plot I, out, and objective function across iterations
         if verbosity >= 2:
-            plot_information_output_and_objective(
-                Is=Is,
-                outs=outs,
-                objectives=objectives,
+            info = compute_mutual_information(Pmc=Pmc, Pc=Pc, Pm=Pm, c=c, m=m)
+            avg_drift = compute_average_output(output=drift, Pmc=Pmc, Pc=Pc, c=c, m=m)
+            avg_entropy = compute_average_output(output=entropy, Pmc=Pmc, Pc=Pc, c=c, m=m)
+            objective = info - lam * avg_drift + mu * avg_entropy
+
+            infos.append(info)
+            avg_drifts.append(avg_drift)
+            avg_entropies.append(avg_entropy)
+            objectives.append(objective)
+
+    # Plot I, out, and objective function across iterations
+    if verbosity >= 2:
+        plot_values_across_iterations(
+            infos=infos,
+            avg_drifts=avg_drifts,
+            avg_entropies=avg_entropies,
+            objectives=objectives,
+            lam=lam,
+            mu=mu,
+            save_path=save_dir / f'convergence_lambda={lam:.2e}_mu={mu:.2e}.png' if save_dir is not None else None
+        )
+
+    # Compute the minimum mutual information (Taylor equation 1)
+    info = compute_mutual_information(Pmc=Pmc, Pc=Pc, Pm=Pm, c=c, m=m)
+
+    # Compute maximum mean output (Taylor equation 4)
+    avg_drift = compute_average_output(output=drift, Pmc=Pmc, Pc=Pc, c=c, m=m)
+    avg_entropy = compute_average_output(output=entropy, Pmc=Pmc, Pc=Pc, c=c, m=m)
+
+    return info, avg_drift, avg_entropy, Pmc, Pm
+
+
+def grid_search_information_and_output(drift: np.ndarray,
+                                       entropy: np.ndarray,
+                                       Pc: np.ndarray,
+                                       c: np.ndarray,
+                                       m: np.ndarray,
+                                       lam_grid: np.ndarray,
+                                       mu_grid: np.ndarray,
+                                       num_iters: int,
+                                       verbosity: int,
+                                       save_dir: Path = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Iterates an algorithm to determine the minimum mutual information and maximum mean fitness for different parameters.
+
+    :param drift: A numpy array containing the drift
+                   for different methylation levels (rows) and ligand concentrations (columns).
+    :param entropy: A numpy array containing the entropy
+                   for different methylation levels (rows) and ligand concentrations (columns).
+    :param Pc: The marginal distribution P(c) over ligand concentrations.
+    :param c: A matrix of ligand concentrations (differing across the columns).
+    :param m: A matrix of methylation levels (differing across the rows).
+    :param lam_grid: A numpy array of Lagrangian mu values differing across the rows.
+    :param mu_grid: A numpy array of Lagrangian mu values differing across the columns.
+    :param num_iters: Maximum number of iterations of the algorithm.
+    :param verbosity: Verbosity level. Higher means more verbose.
+    :param save_dir: Directory where the plot will be saved (if None, displayed instead).
+    :return: A tuple containing:
+               - info_grid (np.ndarray): a matrix of (minimum) mutual information values for each lambda and mu
+               - avg_drift_grid (np.ndarray): a matrix of (maximum) average drift values for each lambda and mu
+               - avg_entropy_grid (np.ndarray): a matrix of (minimum) average entropy values for each lambda and mu
+               - Pmc_grid (np.ndarray): a matrix of  conditional distributions P(m | c) for each lambda and mu
+               - Pm_grid (np.ndarray): a matrix of marginal distributions P(m) for each lambda and mu
+    """
+    # Get grid shapes
+    lagrangian_grid_shape = lam_grid.shape
+    input_grid_shape = c.shape
+
+    # Set up grids to collect information and distributions
+    info_grid = np.zeros(lagrangian_grid_shape)
+    avg_drift_grid = np.zeros(lagrangian_grid_shape)
+    avg_entropy_grid = np.zeros(lagrangian_grid_shape)
+    Pmc_grid = np.zeros((*lagrangian_grid_shape, *input_grid_shape))
+    Pm_grid = np.zeros((*lagrangian_grid_shape, *input_grid_shape))
+
+    for i, j in tqdm(product(range(lam_grid.shape[0]), range(lam_grid.shape[1])), total=lam_grid.size):
+            lam, mu = lam_grid[i, j], mu_grid[i, j]
+
+            info, avg_drift, avg_entropy, Pmc, Pm = determine_information_and_output(
+                drift=drift,
+                entropy=entropy,
+                Pc=Pc,
+                c=c,
+                m=m,
                 lam=lam,
-                save_path=save_dir / f'convergence_lambda={lam:.2f}.png'
+                mu=mu,
+                num_iters=num_iters,
+                verbosity=verbosity,
+                save_dir=save_dir
             )
 
-    return Imins, outmaxes, Pmcs, Pms, lams
+            info_grid[i, j], avg_drift_grid[i, j], avg_entropy_grid[i, j], Pmc_grid[i, j], Pm_grid[i, j] = \
+                info, avg_drift, avg_entropy, Pmc, Pm
+
+    return info_grid, avg_drift_grid, avg_entropy_grid, Pmc_grid, Pm_grid
 
 
-def plot_information_and_output(Imins: List[float],
-                                outmaxes: List[float],
+def plot_information_and_output(infos: List[float],
+                                avg_outs: List[float],
                                 output_type: str,
                                 save_path: Path = None) -> None:
     """
     Plot the maximum mean output vs the minimum mutual information.
 
-    :param Imins: A list of minimum mutual information values.
-    :param outmaxes: A list of maximum mean output values.
+    :param infos: A list of (minimum) mutual information values.
+    :param avg_outs: A list of (maximum/minimum) average output values.
     :param output_type: The name of the type of output.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
-    plt.plot(Imins, outmaxes, 'x')
+    plt.plot(infos, avg_outs, 'x')
     plt.title(f'{output_type} vs Mutual Information')
     plt.ylabel(output_type)
     plt.xlabel('Mutual Information $I(m; c)$ (bits)')
@@ -423,39 +531,42 @@ def plot_information_and_output(Imins: List[float],
     plt.close()
 
 
-def plot_distributions_across_lambdas(distributions: List[np.ndarray],
-                                      c: np.ndarray,
-                                      m: np.ndarray,
-                                      lams: np.ndarray,
-                                      Imins: List[float],
-                                      outmaxes: List[float],
-                                      output_type: str,
-                                      title: str,
-                                      save_path: Path = None) -> None:
+def plot_distributions_across_parameters(distributions: np.ndarray,
+                                         c: np.ndarray,
+                                         m: np.ndarray,
+                                         parameters: np.ndarray,
+                                         parameter_name: str,
+                                         infos: List[float],
+                                         avg_outs: List[float],
+                                         output_type: str,
+                                         title: str,
+                                         save_path: Path = None) -> None:
     """
-    Plots the distributions over methylation levels and ligand concentrations across lambda values.
+    Plots the distributions over methylation levels and ligand concentrations across parameter values.
 
-    :param distributions: A list of probability distributions over methylation levels
-                          and ligand concentrations across lambda values.
+    :param distributions: An array of probability distributions over methylation levels
+                          and ligand concentrations across parameter values.
     :param c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
-    :param lams: A list of values of the Lagrangian parameter lambda.
-    :param Imins: A list of minimum mutual information values.
-    :param outmaxes: A list of maximum mean output values.
+    :param parameters: A list of parameter values for each distribution.
+    :param parameter_name: The name of the parameter corresponding to the values in parameters.
+    :param infos: A list of minimum mutual information values.
+    :param avg_outs: A list of maximum mean output values.
     :param output_type: The name of the type of output.
     :param title: The title of the plot.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
     log_c = np.log(c)
-    size = int(np.ceil(np.sqrt(len(lams))))  # Number of rows/columns in a square that can hold all the plots
+    size = int(np.ceil(np.sqrt(len(parameters))))  # Number of rows/columns in a square that can hold all the plots
 
     fig, axes = plt.subplots(nrows=size, ncols=size, figsize=2.25 * np.array([6.4, 4.8]))
     axes = [axes] if size == 1 else axes.flat
 
-    for ax, distribution, lam, Imin, outmax in tqdm(zip(axes, distributions, lams, Imins, outmaxes), total=len(lams)):
+    for ax, distribution, parameter, Imin, outmax in tqdm(zip(axes, distributions, parameters, infos, avg_outs),
+                                                          total=len(parameters)):
         im = ax.contourf(log_c, m, distribution, levels=64, cmap=CMAP)
         fig.colorbar(im, ax=ax)
-        ax.title.set_text(rf'$\lambda=${lam:.2e}, I$=${Imin:.2e}, {output_type}$=${outmax:.2e}')
+        ax.title.set_text(f'{parameter_name}$=${parameter:.2e}, I$=${Imin:.2e}, {output_type}$=${outmax:.2e}')
 
     fig.suptitle(title)
     fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical')  # y label
@@ -479,28 +590,29 @@ def run_simulation(args: Args) -> None:
     m, c = set_up_methylation_levels_and_ligand_concentrations()
 
     # Compute drift and entropy
-    drift, entropy_production = compute_drift_and_entropy_production(c=c, m=m)
+    drift, entropy = compute_drift_and_entropy_production(c=c, m=m)
 
-    # Select output
-    if args.output_type == 'drift':
-        output = drift
-    elif args.output_type == 'entropy':
-        output = -entropy_production
-    elif args.output_type == 'drift-entropy':
-        output = drift - args.mu * entropy_production
-    else:
-        raise ValueError(f'Output type "{args.output_type}" is not supported.')
-
-    # Plot output
+    # Plot outputs
     if args.verbosity >= 1:
-        plot_output(
-            output=output,
-            output_type=args.output_type.title(),
-            c=c,
-            m=m,
-            plot_max=True,
-            save_path=args.save_dir / f'{args.output_type}.png' if args.save_dir is not None else None
-        )
+        if 'drift' in args.outputs:
+            plot_output(
+                output=drift,
+                output_type='Drift',
+                c=c,
+                m=m,
+                plot_max=True,
+                save_path=args.save_dir / 'drift.png' if args.save_dir is not None else None
+            )
+
+        if 'entropy' in args.outputs:
+            plot_output(
+                output=entropy,
+                output_type='Entropy',
+                c=c,
+                m=m,
+                plot_max=True,
+                save_path=args.save_dir / 'entropy.png' if args.save_dir is not None else None
+            )
 
     # Set up marginal distribution over ligand concentrations P(c)
     Pc = set_up_ligand_concentration_distribution(c=c, ligand_gradient=args.ligand_gradient)
@@ -515,54 +627,78 @@ def run_simulation(args: Args) -> None:
             save_path=args.save_dir / 'pc.png' if args.save_dir is not None else None
         )
 
+    # Get grid of Lagrangian lambda and mu values
+    lam_grid, mu_grid = args.lagrangian_grid
+
     # Determine minimum mutual information and maximum mean output for multiple parameter values
-    Imins, outmaxes, Pmcs, Pms, lams = determine_information_and_output(
-        output=output,
+    info_grid, avg_drift_grid, avg_entropy_grid, Pmc_grid, Pm_grid = grid_search_information_and_output(
+        drift=drift,
+        entropy=entropy,
         Pc=Pc,
-        m=m,
         c=c,
-        iter_max=args.iter_max,
-        lambda_min=args.lambda_min,
-        lambda_max=args.lambda_max,
-        lambda_num=args.lambda_num,
+        m=m,
+        lam_grid=lam_grid,
+        mu_grid=mu_grid,
+        num_iters=args.num_iters,
         verbosity=args.verbosity,
         save_dir=args.save_dir
     )
 
-    # Plot mutual information and mean output
-    plot_information_and_output(
-        Imins=Imins,
-        outmaxes=outmaxes,
-        output_type=args.output_type.title(),
-        save_path=args.save_dir / f'{args.output_type}_vs_information.png' if args.save_dir is not None else None
-    )
+    # Plot average output(s) vs mutual information and plot distributions
+    if args.outputs == {'drift', 'entropy'}:
+        raise NotImplementedError
+    else:
+        # Select output
+        if args.outputs == {'drift'}:
+            output_type = 'drift'
+            avg_out_grid = avg_drift_grid
+            parameters = lam_grid[:, 0]
+            parameter_name = r'$\lambda$'
+        elif args.outputs == {'entropy'}:
+            output_type = 'entropy'
+            avg_out_grid = avg_entropy_grid
+            parameters = mu_grid[0]
+            parameter_name = r'$\mu$'
+        else:
+            raise ValueError(f'Outputs "{args.outputs}" not supported.')
 
-    # Plot conditional distribution for all lambda values
-    plot_distributions_across_lambdas(
-        distributions=Pmcs,
-        c=c,
-        m=m,
-        lams=lams,
-        Imins=Imins,
-        outmaxes=outmaxes,
-        output_type=args.output_type,
-        title='Conditional distribution $P(m|c)$',
-        save_path=args.save_dir / 'pmc.png' if args.save_dir is not None else None
-    )
+        # Remove dimension of size 1 when only using one output
+        infos, avg_outs, Pmcs, Pms = info_grid.squeeze(), avg_out_grid.squeeze(), Pmc_grid.squeeze(), Pm_grid.squeeze()
 
-    # Plot marginal distribution for all lambda values
-    if args.verbosity >= 1:
-        plot_distributions_across_lambdas(
-            distributions=Pms,
+        # Plot average output vs mutual information
+        plot_information_and_output(
+            infos=infos,
+            avg_outs=avg_outs,
+            output_type=output_type.title(),
+            save_path=args.save_dir / f'{output_type}_vs_information.png' if args.save_dir is not None else None
+        )
+
+        # Set up distribution plotting function across Lagrangian values
+        plot_dist_fn = partial(
+            plot_distributions_across_parameters,
             c=c,
             m=m,
-            lams=lams,
-            Imins=Imins,
-            outmaxes=outmaxes,
-            output_type=args.output_type,
-            title='Marginal distribution $P(m)$',
-            save_path=args.save_dir / 'pm.png' if args.save_dir is not None else None
+            parameters=parameters,
+            parameter_name=parameter_name,
+            infos=infos,
+            avg_outs=avg_outs,
+            output_type=output_type
         )
+
+        # Plot conditional distribution across Lagrangian values
+        plot_dist_fn(
+            distributions=Pmcs,
+            title='Conditional distribution $P(m|c)$',
+            save_path=args.save_dir / 'pmc.png' if args.save_dir is not None else None
+        )
+
+        # Plot marginal distribution across Lagrangian values
+        if args.verbosity >= 1:
+            plot_dist_fn(
+                distributions=Pms,
+                title='Marginal distribution $P(m)$',
+                save_path=args.save_dir / 'pm.png' if args.save_dir is not None else None
+            )
 
 
 if __name__ == '__main__':
