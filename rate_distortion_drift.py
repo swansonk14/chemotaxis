@@ -27,13 +27,13 @@ class Args(Tap):
     """The output whose mutual information will be computed."""
     iter_max: int = 100
     """Maximum number of iterations of the algorithm."""
-    lambda_min: float = 1.0
+    lambda_min: float = -1.0
     """Minimum value of lambda in log space (i.e., min lambda = 10^{lambda_min})."""
-    lambda_max: float = 3.5
+    lambda_max: float = 3.0
     """Maximum value of lambda in log space (i.e., min lambda = 10^{lambda_max})."""
     lambda_num: int = 9
     """Number of lambda values between lambda_min and lambda_max."""
-    mu: float = 0.01
+    mu: float = 0.05
     """Lagrangian mu applied to the entropy. Only relevant for output_type == 'drift-entropy'."""
     ligand_gradient: float = 0.1
     """The relative gradient of the ligand concentration."""
@@ -71,14 +71,12 @@ def set_up_methylation_levels_and_ligand_concentrations() -> Tuple[np.ndarray, n
 
 
 def compute_drift_and_entropy_production(c: np.ndarray,
-                                         m: np.ndarray,
-                                         ligand_gradient: float) -> Tuple[np.ndarray, np.ndarray]:
+                                         m: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     Computes the drift and entropy production.
 
     :param c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
-    :param ligand_gradient: The relative gradient of the ligand concentration.
     :return: A tuple consisting of a matrix of drift values and a matrix of entropy production values.
     """
     # Parameters (Micali table S1)
@@ -108,6 +106,9 @@ def compute_drift_and_entropy_production(c: np.ndarray,
     kBm = nu * kBp  # Rate constant k_B^+ for reaction [m]_1 + CH3OH --> [m + 1]_1 + H2O (s^{-1})
     mT = 1e4  # Total number of methylation sites
 
+    # Ligand (local) gradient steepness
+    rel_grad = 0.75
+
     # Methylation free energy (Monod-Wyman-Changeux (MWC) model, Clausznitzer equation 5)
     mE = 1 - 0.5 * m
 
@@ -128,7 +129,7 @@ def compute_drift_and_entropy_production(c: np.ndarray,
     )
 
     # Drift velocity (Micali equation 1)
-    drift = k * A * (1 - A) * dFdc * ligand_gradient
+    drift = k * A * (1 - A) * dFdc * rel_grad
 
     # Concentration of phosphorylated CheY (CheY_p)
     # from CheY + ATP --> CheY_p + ADP (kyp rate constant) and CheY + ADP + Pi --> CheY_p + ADP (kzm rate constant)
@@ -165,7 +166,6 @@ def plot_output(output: np.ndarray,
     :param plot_max: Whether to plot the maximum y value for each x value.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
-    plt.clf()
     plt.contourf(np.log(c), m, output, levels=64, cmap=CMAP)
     plt.colorbar()
 
@@ -182,6 +182,8 @@ def plot_output(output: np.ndarray,
         plt.savefig(save_path, dpi=DPI)
     else:
         plt.show()
+
+    plt.close()
 
 
 def set_up_ligand_concentration_distribution(c: np.ndarray, ligand_gradient: float) -> np.ndarray:
@@ -245,7 +247,6 @@ def plot_information_output_and_objective(Is: List[float],
     :param lam: Lagrangian parameter lambda.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
-    plt.clf()
     fig, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex=True)
     ax0.scatter(np.arange(len(Is)), Is, color='red', label='I', s=3)
     ax1.scatter(np.arange(len(outs)), outs, color='blue', label='out', s=3)
@@ -260,6 +261,8 @@ def plot_information_output_and_objective(Is: List[float],
         plt.savefig(save_path, dpi=DPI)
     else:
         plt.show()
+
+    plt.close()
 
 
 def compute_mutual_information(Pmc: np.ndarray,
@@ -407,7 +410,6 @@ def plot_information_and_output(Imins: List[float],
     :param output_type: The name of the type of output.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
-    plt.clf()
     plt.plot(Imins, outmaxes, 'x')
     plt.title(f'{output_type} vs Mutual Information')
     plt.ylabel(output_type)
@@ -417,6 +419,8 @@ def plot_information_and_output(Imins: List[float],
         plt.savefig(save_path, dpi=DPI)
     else:
         plt.show()
+
+    plt.close()
 
 
 def plot_distributions_across_lambdas(distributions: List[np.ndarray],
@@ -445,7 +449,6 @@ def plot_distributions_across_lambdas(distributions: List[np.ndarray],
     log_c = np.log(c)
     size = int(np.ceil(np.sqrt(len(lams))))  # Number of rows/columns in a square that can hold all the plots
 
-    plt.clf()
     fig, axes = plt.subplots(nrows=size, ncols=size, figsize=2.25 * np.array([6.4, 4.8]))
     axes = [axes] if size == 1 else axes.flat
 
@@ -463,6 +466,8 @@ def plot_distributions_across_lambdas(distributions: List[np.ndarray],
     else:
         plt.show()
 
+    plt.close()
+
 
 def run_simulation(args: Args) -> None:
     """Runs the rate distortion simulation."""
@@ -474,11 +479,7 @@ def run_simulation(args: Args) -> None:
     m, c = set_up_methylation_levels_and_ligand_concentrations()
 
     # Compute drift and entropy
-    drift, entropy_production = compute_drift_and_entropy_production(
-        c=c,
-        m=m,
-        ligand_gradient=args.ligand_gradient
-    )
+    drift, entropy_production = compute_drift_and_entropy_production(c=c, m=m)
 
     # Select output
     if args.output_type == 'drift':
