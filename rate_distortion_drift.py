@@ -41,12 +41,41 @@ class Args(Tap):
     """Maximum value of Lagrangian mu for entropy in log space (i.e., min mu = 10^{mu_max})."""
     mu_num: int = 9
     """Number of mu values between mu_min and mu_max."""
+    linearize_params: bool = False
+    """Whether to linearize the middle third of the lambda and mu parameters."""
     ligand_gradient: float = 0.1
     """The relative gradient of the ligand concentration."""
     verbosity: Literal[0, 1, 2] = 1
     """Verbosity level. Higher means more verbose."""
     save_dir: Path = None
     """Directory where plots and arguments will be saved (if None, displayed instead)."""
+
+    @staticmethod
+    def linearize_array_middle(array: np.ndarray, proportion: float = 0.4) -> np.ndarray:
+        """
+        Linearizes the middle portion of the array.
+
+        Example:     [1e-4, 1e-3, 1e-2, 1e-1,    1,       1e1,      1e2, 1e3, 1e4]
+                 ==> [1e-4, 1e-3, 1e-2, 2.5e+01, 5.0e+01, 7.50e+01, 1e2, 1e3, 1e4]
+
+        :param array: An array of values.
+        :param proportion: The proportion of the middle of the array to linearize.
+        :return: An array of values with the middle portion of the values linearized.
+        """
+        # Copy params array
+        array = array.copy()
+
+        # Determine indices for middle portion
+        size = len(array) - 1
+        middle = size / 2
+        diff = size * proportion / 2
+        start_index = round(middle - diff)
+        end_index = round(middle + diff)
+
+        # Replace middle portion with linear space
+        array[start_index:end_index + 1] = np.linspace(array[start_index], array[end_index], end_index - start_index + 1)
+
+        return array
 
     @property
     def lams(self) -> np.ndarray:
@@ -56,9 +85,14 @@ class Args(Tap):
         :return: A numpy array with the range of lambda values (or just 0 if drift is not an output).
         """
         if 'drift' in self.outputs:
-            return np.logspace(self.lambda_min, self.lambda_max, self.lambda_num)
+            lams = np.logspace(self.lambda_min, self.lambda_max, self.lambda_num)
 
-        return np.zeros(1)
+            if self.linearize_params:
+                lams = self.linearize_array_middle(lams)
+        else:
+            lams = np.zeros(1)
+
+        return lams
 
     @property
     def mus(self) -> np.ndarray:
@@ -68,9 +102,14 @@ class Args(Tap):
         :return: A numpy array with the range of mu values (or just 0 if entropy is not an output).
         """
         if 'entropy' in self.outputs:
-            return np.logspace(self.mu_min, self.mu_max, self.mu_num)
+            mus = np.logspace(self.mu_min, self.mu_max, self.mu_num)
 
-        return np.zeros(1)
+            if self.linearize_params:
+                mus = self.linearize_array_middle(mus)
+        else:
+            mus = np.zeros(1)
+
+        return mus
 
     @property
     def lagrangian_grid(self) -> Tuple[np.ndarray, np.ndarray]:
