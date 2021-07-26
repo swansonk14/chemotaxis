@@ -545,7 +545,15 @@ def plot_information_and_outputs_3d(info_grid: np.ndarray,
     """
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
-    ax.scatter(info_grid.flatten(), avg_drift_grid.flatten(), avg_entropy_grid.flatten())
+
+    # Numbers from low mu to high mu (connected by a line)
+    # Blue to green from low lambda to high lambda
+    for i, (info_row, avg_drift_row, avg_entropy_row) in enumerate(zip(info_grid, avg_drift_grid, avg_entropy_grid)):
+        color = CMAP(i / len(info_row))
+        ax.plot(info_row, avg_drift_row, avg_entropy_row, c=color)
+
+        for j, (info, avg_drift, avg_entropy) in enumerate(zip(info_row, avg_drift_row, avg_entropy_row)):
+            ax.text(info, avg_drift, avg_entropy, str(j + 1), color=color)
 
     ax.set_xlabel('Mutual Information $I(m; c)$ (bits)')
     ax.set_ylabel('Drift')
