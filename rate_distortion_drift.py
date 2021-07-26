@@ -92,6 +92,7 @@ class Args(Tap):
 
 # Constants
 CMAP = plt.get_cmap('viridis')
+LEVELS = 64
 EPS = np.spacing(1)
 DPI = 300
 
@@ -209,7 +210,7 @@ def plot_output(output: np.ndarray,
     :param plot_max: Whether to plot the maximum y value for each x value.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
-    plt.contourf(np.log(c), m, output, levels=64, cmap=CMAP)
+    plt.contourf(np.log(c), m, output, levels=LEVELS, cmap=CMAP)
     plt.colorbar()
 
     if plot_max:
@@ -593,20 +594,20 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
     log_c = np.log(c)
-    size = int(np.ceil(np.sqrt(len(parameters))))  # Number of rows/columns in a square that can hold all the plots
+    sqrt_size = int(np.ceil(np.sqrt(len(parameters))))  # Number of rows/columns in a square that can hold all the plots
 
-    fig, axes = plt.subplots(nrows=size, ncols=size, figsize=2.25 * np.array([6.4, 4.8]))
-    axes = [axes] if size == 1 else axes.flat
+    fig, axes = plt.subplots(nrows=sqrt_size, ncols=sqrt_size, figsize=sqrt_size * np.array([6.4, 4.8]) * 0.75)
+    axes = [axes] if sqrt_size == 1 else axes.flat
 
     for ax, distribution, parameter, Imin, outmax in tqdm(zip(axes, distributions, parameters, infos, avg_outs),
                                                           total=len(parameters)):
-        im = ax.contourf(log_c, m, distribution, levels=64, cmap=CMAP)
+        im = ax.contourf(log_c, m, distribution, levels=LEVELS, cmap=CMAP)
         fig.colorbar(im, ax=ax)
         ax.title.set_text(f'{parameter_name}$=${parameter:.2e}, I$=${Imin:.2e}, {output_type}$=${outmax:.2e}')
 
-    fig.suptitle(title)
-    fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical')  # y label
-    fig.text(0.5, 0.04, r'Ligand concentration $\log(c)$', ha='center')  # x label
+    fig.suptitle(title, fontsize=10 * sqrt_size)
+    fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical', fontsize=7 * sqrt_size)  # y label
+    fig.text(0.5, 0.04, r'Ligand concentration $\log(c)$', ha='center', fontsize=7 * sqrt_size)  # x label
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -646,8 +647,9 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
     log_c = np.log(c)
     nrows, ncols = lam_grid.shape
     size = lam_grid.size
+    sqrt_size = np.sqrt(size)
 
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=2.25 * np.array([6.4, 4.8]))
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=sqrt_size * np.array([6.4, 4.8]) * 0.75)
 
     # Ensure axes is a 2d array
     if size == 1:
@@ -660,11 +662,11 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
     # Plot distributions
     for i, j in tqdm(product(range(nrows), range(ncols)), total=size):
         ax = axes[i, j]
-        im = ax.contourf(log_c, m, distribution_grid[i, j], levels=64, cmap=CMAP)
+        im = ax.contourf(log_c, m, distribution_grid[i, j], levels=LEVELS, cmap=CMAP)
         fig.colorbar(im, ax=ax)
         ax.set_title((f'I$=${info_grid[i, j]:.2e}, ' if info_grid is not None else '') +
-                     (f'drift$=${avg_drift_grid[i, j]:.2e}, ' if avg_drift_grid is not None else '') +
-                     (f'entropy$=${avg_entropy_grid[i, j]:.2e}' if avg_entropy_grid is not None else ''))
+                     (f'V$=${avg_drift_grid[i, j]:.2e}, ' if avg_drift_grid is not None else '') +
+                     (f'S$=${avg_entropy_grid[i, j]:.2e}' if avg_entropy_grid is not None else ''))
 
         if plot_max:
             maxi = np.argmax(distribution_grid[i, j], axis=0)  # Index in each column corresponding to maximum
@@ -677,9 +679,9 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
         if j == 0:
             ax.set_ylabel(rf'$\lambda=${lam_grid[i, j]:.2e}')
 
-    fig.suptitle(title)
-    fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical')  # y label
-    fig.text(0.5, 0.04, r'Ligand concentration $\log(c)$', ha='center')  # x label
+    fig.suptitle(title, fontsize=10 * sqrt_size)
+    fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical', fontsize=7 * sqrt_size)  # y label
+    fig.text(0.5, 0.04, r'Ligand concentration $\log(c)$', ha='center', fontsize=7 * sqrt_size)  # x label
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
