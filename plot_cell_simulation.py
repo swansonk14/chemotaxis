@@ -1,6 +1,6 @@
 """Plots the movement of cells in a RapidCell simulation."""
 from pathlib import Path
-from typing import Dict, List, Literal
+from typing import Literal
 
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
@@ -19,6 +19,17 @@ class Args(Tap):
     """The parameter to use to determine the color gradient."""
 
 
+def log_ligand_concentration(x: float, rate: float = 0.001) -> float:
+    """
+    Computes the log ligand concentration using and exponential gradient.
+
+    :param x: The x position.
+    :param rate: The exponential rate.
+    :return: The log of the ligand concentration.
+    """
+    return np.log(rate * np.exp(x))
+
+
 def plot_cell_simulation(args: Args) -> None:
     """Plots the movement of cells in a RapidCell simulation."""
     # Load data
@@ -31,7 +42,7 @@ def plot_cell_simulation(args: Args) -> None:
     } for i in range(1, data.shape[1], len(COLUMNS))]
 
     # Plot cell movements
-    fig, ax = plt.subplots()
+    fig, ax1 = plt.subplots()
 
     # Iterate over individual cells
     for cell_data in data:
@@ -43,14 +54,27 @@ def plot_cell_simulation(args: Args) -> None:
         lc = LineCollection(segments, cmap='viridis')
         lc.set_array(cell_data[args.color_gradient])
         lc.set_linewidth(2)
-        line = ax.add_collection(lc)
+        line = ax1.add_collection(lc)
 
     X = [x for cell_data in data for x in cell_data['x']]
     Y = [y for cell_data in data for y in cell_data['y']]
 
-    fig.colorbar(line, ax=ax)
-    ax.set_xlim(np.min(X), np.max(X))
-    ax.set_ylim(np.min(Y), np.max(Y))
+    min_x, max_x = np.min(X), np.max(X)
+    min_y, max_y = np.min(Y), np.max(Y)
+
+    fig.colorbar(line, ax=ax1)
+    ax1.set_xlim(min_x, max_x)
+    ax1.set_ylim(min_y, max_y)
+    ax1.set_xlabel('X position')
+    ax1.set_ylabel('Y position')
+
+    # Plot ligand concentration
+    ax2 = ax1.twiny()
+    ax2.set_xlabel(r'Ligand concentration $\log(c)$', color='r')
+    ax2.tick_params(axis='x', colors='red')
+    ax2.spines['top'].set_color('red')
+    ax2.set_xlim(log_ligand_concentration(min_x), log_ligand_concentration(max_x))
+
     plt.show()
 
 
