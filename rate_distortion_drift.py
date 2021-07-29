@@ -392,6 +392,46 @@ def compute_average_output(output: np.ndarray,
     return integrate(Pc * integrate(Pmc * output, m, axis=0), c, axis=1)[0]
 
 
+def compute_standard_deviation_output(output: np.ndarray,
+                                      Pmc: np.ndarray,
+                                      Pc: np.ndarray,
+                                      c: np.ndarray,
+                                      m: np.ndarray,
+                                      avg_output: float = None) -> float:
+    """
+    Computes the standard deviation of the output given the conditional and marginal distributions.
+
+    :param output: A matrix containing the output of interest
+                   for different methylation levels (rows) and ligand concentrations (columns).
+    :param Pmc: The conditional distribution P(m | c) over methylation levels given ligand concentrations.
+    :param Pc: The marginal distribution P(c) over ligand concentrations.
+    :param c: A matrix of ligand concentrations (differing across the columns).
+    :param m: A matrix of methylation levels (differing across the rows).
+    :param avg_output: The average output. If None, the average output is computed.
+    :return: The standard deviation of the output given the conditional and marginal distributions.
+    """
+    if avg_output is None:
+        avg_output = compute_average_output(
+            output=output,
+            Pmc=Pmc,
+            Pc=Pc,
+            c=c,
+            m=m
+        )
+
+    avg_squared_output = compute_average_output(
+        output=output ** 2,
+        Pmc=Pmc,
+        Pc=Pc,
+        c=c,
+        m=m
+    )
+
+    std_output = np.sqrt(avg_squared_output - avg_output ** 2)
+
+    return std_output
+
+
 def determine_information_and_output(drift: np.ndarray,
                                      entropy: np.ndarray,
                                      Pc: np.ndarray,
@@ -401,7 +441,8 @@ def determine_information_and_output(drift: np.ndarray,
                                      mu: float,
                                      num_iters: int,
                                      verbosity: int,
-                                     save_dir: Path = None) -> Tuple[float, float, float, np.ndarray, np.ndarray]:
+                                     save_dir: Path = None) -> Tuple[float, float, float, float, float,
+                                                                     np.ndarray, np.ndarray]:
     """
     Iterates an algorithm to determine the minimum mutual information and maximum mean fitness.
 
@@ -420,7 +461,9 @@ def determine_information_and_output(drift: np.ndarray,
     :return: A tuple containing:
                - info (float): the (minimum) mutual information
                - avg_drift (float): the (maximum) average drift
+               - std_drift (float): the standard deviation of the drift
                - avg_entropy (float): the (minimum) average entropy
+               - std_entropy (float): the standard deviation of the entropy
                - Pmc (np.ndarray): the conditional distributions P(m | c)
                - Pm (np.ndarray): the marginal distributions P(m)
     """
@@ -474,11 +517,13 @@ def determine_information_and_output(drift: np.ndarray,
     # Compute the minimum mutual information (Taylor equation 1)
     info = compute_mutual_information(Pmc=Pmc, Pc=Pc, Pm=Pm, c=c, m=m)
 
-    # Compute maximum mean output (Taylor equation 4)
+    # Compute maximum mean output and standard deviation (Taylor equation 4)
     avg_drift = compute_average_output(output=drift, Pmc=Pmc, Pc=Pc, c=c, m=m)
+    std_drift = compute_standard_deviation_output(output=drift, Pmc=Pmc, Pc=Pc, c=c, m=m, avg_output=avg_drift)
     avg_entropy = compute_average_output(output=entropy, Pmc=Pmc, Pc=Pc, c=c, m=m)
+    std_entropy = compute_standard_deviation_output(output=entropy, Pmc=Pmc, Pc=Pc, c=c, m=m, avg_output=avg_entropy)
 
-    return info, avg_drift, avg_entropy, Pmc, Pm
+    return info, avg_drift, std_drift, avg_entropy, std_entropy, Pmc, Pm
 
 
 def grid_search_information_and_output(drift: np.ndarray,
@@ -490,7 +535,8 @@ def grid_search_information_and_output(drift: np.ndarray,
                                        mu_grid: np.ndarray,
                                        num_iters: int,
                                        verbosity: int,
-                                       save_dir: Path = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                                       save_dir: Path = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+                                                                       np.ndarray, np.ndarray, np.ndarray]:
     """
     Iterates an algorithm to determine the minimum mutual information and maximum mean fitness for different parameters.
 
@@ -509,7 +555,9 @@ def grid_search_information_and_output(drift: np.ndarray,
     :return: A tuple containing:
                - info_grid (np.ndarray): a matrix of (minimum) mutual information values for each lambda and mu
                - avg_drift_grid (np.ndarray): a matrix of (maximum) average drift values for each lambda and mu
+               - std_drift_grid (np.ndarray): a matrix of drift standard deviation values for each lambda and mu
                - avg_entropy_grid (np.ndarray): a matrix of (minimum) average entropy values for each lambda and mu
+               - std_entropy_grid (np.ndarray): a matrix of entropy standard deviation values for each lambda and mu
                - Pmc_grid (np.ndarray): a matrix of  conditional distributions P(m | c) for each lambda and mu
                - Pm_grid (np.ndarray): a matrix of marginal distributions P(m) for each lambda and mu
     """
@@ -520,30 +568,29 @@ def grid_search_information_and_output(drift: np.ndarray,
     # Set up grids to collect information and distributions
     info_grid = np.zeros(lagrangian_grid_shape)
     avg_drift_grid = np.zeros(lagrangian_grid_shape)
+    std_drift_grid = np.zeros(lagrangian_grid_shape)
     avg_entropy_grid = np.zeros(lagrangian_grid_shape)
+    std_entropy_grid = np.zeros(lagrangian_grid_shape)
     Pmc_grid = np.zeros((*lagrangian_grid_shape, *input_grid_shape))
     Pm_grid = np.zeros((*lagrangian_grid_shape, *input_grid_shape))
 
     for i, j in tqdm(product(range(lam_grid.shape[0]), range(lam_grid.shape[1])), total=lam_grid.size):
-            lam, mu = lam_grid[i, j], mu_grid[i, j]
-
-            info, avg_drift, avg_entropy, Pmc, Pm = determine_information_and_output(
+        info_grid[i, j], avg_drift_grid[i, j], std_drift_grid[i, j], avg_entropy_grid[i, j], \
+            std_entropy_grid[i, j], Pmc_grid[i, j], Pm_grid[i, j] = \
+            determine_information_and_output(
                 drift=drift,
                 entropy=entropy,
                 Pc=Pc,
                 c=c,
                 m=m,
-                lam=lam,
-                mu=mu,
+                lam=lam_grid[i, j],
+                mu=mu_grid[i, j],
                 num_iters=num_iters,
                 verbosity=verbosity,
                 save_dir=save_dir
             )
 
-            info_grid[i, j], avg_drift_grid[i, j], avg_entropy_grid[i, j], Pmc_grid[i, j], Pm_grid[i, j] = \
-                info, avg_drift, avg_entropy, Pmc, Pm
-
-    return info_grid, avg_drift_grid, avg_entropy_grid, Pmc_grid, Pm_grid
+    return info_grid, avg_drift_grid, std_drift_grid, avg_entropy_grid, std_entropy_grid, Pmc_grid, Pm_grid
 
 
 def plot_information_and_output(infos: List[float],
@@ -608,6 +655,26 @@ def plot_information_and_outputs_3d(info_grid: np.ndarray,
     plt.close()
 
 
+def avg_plus_minus_std_string(avg: float, std: float, precision: int = 2) -> str:
+    """
+    Creates a string of the form 'avg +/- std' using scientific notation with the precision provided.
+
+    :param avg: The average value.
+    :param std: The standard deviation value.
+    :param precision: The floating point precision to use.
+    :return: A string of the form 'avg +/- std' using scientific notation with the precision provided.
+    """
+    avg_power = int(np.floor(np.log10(avg)))
+    std_power = int(np.floor(np.log10(std)))
+    power = max(avg_power, std_power)
+    base = 10 ** power
+    sign = '+' if power >= 0 else '-'
+    power_string = str(abs(power)).zfill(2)
+    string = rf'{avg / base:.{precision}f}$\pm${std / base:.{precision}f}e{sign}{power_string}'
+
+    return string
+
+
 def plot_distributions_across_parameters(distributions: np.ndarray,
                                          c: np.ndarray,
                                          m: np.ndarray,
@@ -615,6 +682,7 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
                                          parameter_name: str,
                                          infos: List[float],
                                          avg_outs: List[float],
+                                         std_outs: List[float],
                                          output_type: str,
                                          title: str,
                                          save_path: Path = None) -> None:
@@ -628,6 +696,7 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
     :param parameter_name: The name of the parameter corresponding to the values in parameters.
     :param infos: A list of minimum mutual information values.
     :param avg_outs: A list of maximum mean output values.
+    :param std_outs: A list of output standard deviation values.
     :param output_type: The name of the type of output.
     :param title: The title of the plot.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
@@ -638,11 +707,14 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
     fig, axes = plt.subplots(nrows=sqrt_size, ncols=sqrt_size, figsize=sqrt_size * np.array([6.4, 4.8]) * 0.75)
     axes = [axes] if sqrt_size == 1 else axes.flat
 
-    for ax, distribution, parameter, Imin, outmax in tqdm(zip(axes, distributions, parameters, infos, avg_outs),
-                                                          total=len(parameters)):
+    for ax, distribution, parameter, info, avg_out, std_out in tqdm(zip(axes, distributions, parameters,
+                                                                        infos, avg_outs, std_outs),
+                                                                    total=len(parameters)):
         im = ax.contourf(log_c, m, distribution, levels=LEVELS, cmap=CMAP)
         fig.colorbar(im, ax=ax)
-        ax.title.set_text(f'{parameter_name}$=${parameter:.2e}, I$=${Imin:.2e}, {output_type}$=${outmax:.2e}')
+        ax.title.set_text(f'{parameter_name}$=${parameter:.2e}, '
+                          f'I$=${info:.2e}, '
+                          rf'{output_type}$=${avg_plus_minus_std_string(avg_out, std_out)}')
 
     fig.suptitle(title, fontsize=10 * sqrt_size)
     fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical', fontsize=7 * sqrt_size)  # y label
@@ -664,7 +736,9 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
                                              title: str,
                                              info_grid: np.ndarray = None,
                                              avg_drift_grid: np.ndarray = None,
+                                             std_drift_grid: np.ndarray = None,
                                              avg_entropy_grid: np.ndarray = None,
+                                             std_entropy_grid: np.ndarray = None,
                                              plot_max: bool = False,
                                              save_path: Path = None) -> None:
     """
@@ -679,7 +753,9 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
     :param title: The title of the plot.
     :param info_grid: A matrix of mutual information values for different lambda and mu values.
     :param avg_drift_grid: A matrix of average drift values for different lambda and mu values.
+    :param std_drift_grid: A matrix of drift standard deviation values for each lambda and mu.
     :param avg_entropy_grid: A matrix of average entropy values for different lambda and mu values.
+    :param std_entropy_grid: A matrix of entropy standard deviation values for each lambda and mu.
     :param plot_max: Whether to plot the maximum y value for each x value.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
@@ -704,8 +780,10 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
         im = ax.contourf(log_c, m, distribution_grid[i, j], levels=LEVELS, cmap=CMAP)
         fig.colorbar(im, ax=ax)
         ax.set_title((f'I$=${info_grid[i, j]:.2e}, ' if info_grid is not None else '') +
-                     (f'V$=${avg_drift_grid[i, j]:.2e}, ' if avg_drift_grid is not None else '') +
-                     (f'S$=${avg_entropy_grid[i, j]:.2e}' if avg_entropy_grid is not None else ''))
+                     (f'V$=${avg_plus_minus_std_string(avg_drift_grid[i, j], std_drift_grid[i, j])}, '
+                      if avg_drift_grid is not None and std_drift_grid is not None else '') +
+                     (f'S$=${avg_plus_minus_std_string(avg_entropy_grid[i, j], std_entropy_grid[i, j])}'
+                      if avg_entropy_grid is not None and std_entropy_grid is not None else ''))
 
         if plot_max:
             maxi = np.argmax(distribution_grid[i, j], axis=0)  # Index in each column corresponding to maximum
@@ -795,18 +873,19 @@ def run_simulation(args: Args) -> None:
         )
 
     # Determine minimum mutual information and maximum mean output for multiple parameter values
-    info_grid, avg_drift_grid, avg_entropy_grid, Pmc_grid, Pm_grid = grid_search_information_and_output(
-        drift=drift,
-        entropy=entropy,
-        Pc=Pc,
-        c=c,
-        m=m,
-        lam_grid=lam_grid,
-        mu_grid=mu_grid,
-        num_iters=args.num_iters,
-        verbosity=args.verbosity,
-        save_dir=args.save_dir
-    )
+    info_grid, avg_drift_grid, std_drift_grid, avg_entropy_grid, std_entropy_grid, Pmc_grid, Pm_grid = \
+        grid_search_information_and_output(
+            drift=drift,
+            entropy=entropy,
+            Pc=Pc,
+            c=c,
+            m=m,
+            lam_grid=lam_grid,
+            mu_grid=mu_grid,
+            num_iters=args.num_iters,
+            verbosity=args.verbosity,
+            save_dir=args.save_dir
+        )
 
     # Plot average output(s) vs mutual information and plot distributions
     if args.outputs == {'drift', 'entropy'}:
@@ -827,7 +906,9 @@ def run_simulation(args: Args) -> None:
             mu_grid=mu_grid,
             info_grid=info_grid,
             avg_drift_grid=avg_drift_grid,
+            std_drift_grid=std_drift_grid,
             avg_entropy_grid=avg_entropy_grid,
+            std_entropy_grid=std_entropy_grid
         )
 
         # Plot conditional distribution across Lagrangian values
@@ -849,18 +930,21 @@ def run_simulation(args: Args) -> None:
         if args.outputs == {'drift'}:
             output_type = 'drift'
             avg_out_grid = avg_drift_grid
+            std_out_grid = std_drift_grid
             parameters = lam_grid[:, 0]
             parameter_name = r'$\lambda$'
         elif args.outputs == {'entropy'}:
             output_type = 'entropy'
             avg_out_grid = avg_entropy_grid
+            std_out_grid = std_entropy_grid
             parameters = mu_grid[0]
             parameter_name = r'$\mu$'
         else:
             raise ValueError(f'Outputs "{args.outputs}" not supported.')
 
         # Remove dimension of size 1 when only using one output
-        infos, avg_outs, Pmcs, Pms = info_grid.squeeze(), avg_out_grid.squeeze(), Pmc_grid.squeeze(), Pm_grid.squeeze()
+        infos, avg_outs, std_outs, Pmcs, Pms = \
+            info_grid.squeeze(), avg_out_grid.squeeze(), std_out_grid.squeeze(), Pmc_grid.squeeze(), Pm_grid.squeeze()
 
         # Plot average output vs mutual information
         plot_information_and_output(
@@ -879,6 +963,7 @@ def run_simulation(args: Args) -> None:
             parameter_name=parameter_name,
             infos=infos,
             avg_outs=avg_outs,
+            std_outs=std_outs,
             output_type=output_type
         )
 
