@@ -169,7 +169,7 @@ def compute_drift_and_entropy_production(c: np.ndarray,
     va = 1 / 3  # Fraction of Tar receptors (paper uses 1 / 3)
     vs = 2 / 3  # Fraction of Tsr receptors (paper uses 2 / 3)
     Kaon = 0.5  # Active receptors dissociation constant Tar (mM, paper uses 1.0)
-    Kson = 100000  # Active receptors dissociation constant Tsr (mM, paper uses 1E6)
+    Kson = 1e6  # Active receptors dissociation constant Tsr (mM, paper uses 1E6)
     Kaoff = 0.02  # Inactive receptors dissociation constant Tar (mM, paper uses 0.03)
     Ksoff = 100  # Inactive receptors dissociation constant Tsr (mM, paper uses 100)
     YT = 9.7  # Total concentration of CheY (muM, paper uses 7.9, range [6; 9.7])
@@ -214,7 +214,7 @@ def compute_drift_and_entropy_production(c: np.ndarray,
     )
 
     # Drift velocity (Micali equation 1)
-    drift = k * A * (1 - A) * dFdc * rel_grad
+    drift = k * A * (1 - A) * dFdc * rel_grad  # TODO: are the units um/s?
 
     # Concentration of phosphorylated CheY (CheY_p)
     # from CheY + ATP --> CheY_p + ADP (kyp rate constant) and CheY + ADP + Pi --> CheY_p + ADP (kzm rate constant)
@@ -251,16 +251,18 @@ def plot_output(output: np.ndarray,
     :param plot_max: Whether to plot the maximum y value for each x value.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
-    plt.contourf(np.log(c), m, output, levels=LEVELS, cmap=CMAP)
+    log_c = np.log10(c)
+
+    plt.contourf(log_c, m, output, levels=LEVELS, cmap=CMAP)
     plt.colorbar()
 
     if plot_max:
         maxi = np.argmax(output, axis=0)  # Index in each column corresponding to maximum
-        plt.plot(np.log(c[0]), m[maxi, 0], color='red', label='max')
+        plt.plot(log_c[0], m[maxi, 0], color='red', label='max')
         plt.legend(loc='upper left')
 
     plt.title(f'{output_type} for given ligand concentration and methylation level')
-    plt.xlabel(r'Ligand concentration $\log(c)$')
+    plt.xlabel(r'Ligand concentration $\log_{10}(c)$')
     plt.ylabel('Methylation level $m$')
 
     if save_path is not None:
@@ -735,7 +737,7 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
     :param title: The title of the plot.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
-    log_c = np.log(c)
+    log_c = np.log10(c)
     sqrt_size = int(np.ceil(np.sqrt(len(parameters))))  # Number of rows/columns in a square that can hold all the plots
 
     fig, axes = plt.subplots(nrows=sqrt_size, ncols=sqrt_size, figsize=sqrt_size * np.array([6.4, 4.8]) * 0.75)
@@ -752,7 +754,7 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
 
     fig.suptitle(title, fontsize=10 * sqrt_size)
     fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical', fontsize=7 * sqrt_size)  # y label
-    fig.text(0.5, 0.04, r'Ligand concentration $\log(c)$', ha='center', fontsize=7 * sqrt_size)  # x label
+    fig.text(0.5, 0.04, r'Ligand concentration $\log_{10}(c)$', ha='center', fontsize=7 * sqrt_size)  # x label
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -793,7 +795,7 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
     :param plot_max: Whether to plot the maximum y value for each x value.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
-    log_c = np.log(c)
+    log_c = np.log10(c)
     nrows, ncols = lam_grid.shape
     size = lam_grid.size
     sqrt_size = np.sqrt(size)
@@ -821,7 +823,7 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
 
         if plot_max:
             maxi = np.argmax(distribution_grid[i, j], axis=0)  # Index in each column corresponding to maximum
-            ax.plot(np.log(c[0]), m[maxi, 0], color='red', label='max')
+            ax.plot(log_c[0], m[maxi, 0], color='red', label='max')
             ax.legend(loc='upper left')
 
         if i == nrows - 1:
@@ -832,7 +834,7 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
 
     fig.suptitle(title, fontsize=10 * sqrt_size)
     fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical', fontsize=7 * sqrt_size)  # y label
-    fig.text(0.5, 0.04, r'Ligand concentration $\log(c)$', ha='center', fontsize=7 * sqrt_size)  # x label
+    fig.text(0.5, 0.04, r'Ligand concentration $\log_{10}(c)$', ha='center', fontsize=7 * sqrt_size)  # x label
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
