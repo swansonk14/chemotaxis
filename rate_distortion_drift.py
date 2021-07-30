@@ -467,6 +467,9 @@ def determine_information_and_output(drift: np.ndarray,
                - Pmc (np.ndarray): the conditional distributions P(m | c)
                - Pm (np.ndarray): the marginal distributions P(m)
     """
+    if save_dir is not None:
+        save_dir.mkdir(parents=True, exist_ok=True)
+
     # Keep track of values across iterations (if verbosity >= 2)
     infos, avg_drifts, avg_entropies, objectives = [], [], [], []
 
@@ -561,6 +564,9 @@ def grid_search_information_and_output(drift: np.ndarray,
                - Pmc_grid (np.ndarray): a matrix of  conditional distributions P(m | c) for each lambda and mu
                - Pm_grid (np.ndarray): a matrix of marginal distributions P(m) for each lambda and mu
     """
+    if save_dir is not None:
+        save_dir.mkdir(parents=True, exist_ok=True)
+
     # Get grid shapes
     lagrangian_grid_shape = lam_grid.shape
     input_grid_shape = c.shape
@@ -621,15 +627,18 @@ def plot_information_and_output(infos: List[float],
 def plot_information_and_outputs_3d(info_grid: np.ndarray,
                                     avg_drift_grid: np.ndarray,
                                     avg_entropy_grid: np.ndarray,
-                                    save_path: Path = None) -> None:
+                                    save_dir: Path = None) -> None:
     """
     Plot the (maximum) average drift vs the (minimum) average entropy vs the (minimum) mutual information.
 
     :param info_grid: A matrix of mutual information values for different lambda and mu values.
     :param avg_drift_grid: A matrix of average drift values for different lambda and mu values.
     :param avg_entropy_grid: A matrix of average entropy values for different lambda and mu values.
-    :param save_path: Path where the plot will be saved (if None, displayed instead).
+    :param save_dir: Path to directory where the plots will be saved (if None, displayed instead).
     """
+    if save_dir is not None:
+        save_dir.mkdir(parents=True, exist_ok=True)
+
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
 
@@ -647,8 +656,11 @@ def plot_information_and_outputs_3d(info_grid: np.ndarray,
     ax.set_zlabel('Entropy')
     ax.set_title('Drift vs Entropy vs Mutual Information')
 
-    if save_path is not None:
-        plt.savefig(save_path, dpi=DPI)
+    if save_dir is not None:
+        base_azim = ax.azim
+        for angle in range(0, 360, 30):
+            ax.azim = base_azim + angle
+            plt.savefig(save_dir / f'{str(angle).zfill(3)}.png', dpi=DPI)
     else:
         plt.show()
 
@@ -894,7 +906,7 @@ def run_simulation(args: Args) -> None:
             info_grid=info_grid,
             avg_drift_grid=avg_drift_grid,
             avg_entropy_grid=avg_entropy_grid,
-            save_path=args.save_dir / 'drift_vs_entropy_vs_information.png' if args.save_dir is not None else None
+            save_dir=args.save_dir / 'drift_vs_entropy_vs_information' if args.save_dir is not None else None
         )
 
         # Set up distribution plotting function across Lagrangian values
