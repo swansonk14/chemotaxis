@@ -14,6 +14,7 @@ References:
 """
 from functools import partial
 from itertools import product
+from multiprocessing import Pool
 from pathlib import Path
 from typing import List, Literal, Set, Tuple
 
@@ -21,7 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.integrate import trapezoid as integrate
 from tap import Tap
-from tqdm import tqdm, trange
+from tqdm import tqdm
 
 
 class Args(Tap):
@@ -41,8 +42,8 @@ class Args(Tap):
     """Maximum value of Lagrangian mu for entropy in log space (i.e., min mu = 10^{mu_max})."""
     mu_num: int = 9
     """Number of mu values between mu_min and mu_max."""
-    linearize_params: bool = False
-    """Whether to linearize the middle third of the lambda and mu parameters."""
+    linearize_params: float = 0.0
+    """The proportion of the middle part of the lambda and mu ranges to change to linear scale instead of log scale."""
     ligand_gradient: float = 0.1
     """The relative gradient of the ligand concentration."""
     verbosity: Literal[0, 1, 2] = 1
@@ -51,7 +52,7 @@ class Args(Tap):
     """Directory where plots and arguments will be saved (if None, displayed instead)."""
 
     @staticmethod
-    def linearize_array_middle(array: np.ndarray, proportion: float = 0.4) -> np.ndarray:
+    def linearize_array_middle(array: np.ndarray, proportion: float) -> np.ndarray:
         """
         Linearizes the middle portion of the array.
 
@@ -71,9 +72,10 @@ class Args(Tap):
         diff = size * proportion / 2
         start_index = round(middle - diff)
         end_index = round(middle + diff)
+        num = end_index - start_index + 1
 
         # Replace middle portion with linear space
-        array[start_index:end_index + 1] = np.linspace(array[start_index], array[end_index], end_index - start_index + 1)
+        array[start_index:end_index + 1] = np.linspace(array[start_index], array[end_index], num)
 
         return array
 
@@ -87,8 +89,8 @@ class Args(Tap):
         if 'drift' in self.outputs:
             lams = np.logspace(self.lambda_min, self.lambda_max, self.lambda_num)
 
-            if self.linearize_params:
-                lams = self.linearize_array_middle(lams)
+            if self.linearize_params > 0.0:
+                lams = self.linearize_array_middle(array=lams, proportion=self.linearize_params)
         else:
             lams = np.zeros(1)
 
@@ -104,8 +106,8 @@ class Args(Tap):
         if 'entropy' in self.outputs:
             mus = np.logspace(self.mu_min, self.mu_max, self.mu_num)
 
-            if self.linearize_params:
-                mus = self.linearize_array_middle(mus)
+            if self.linearize_params > 0.0:
+                mus = self.linearize_array_middle(array=mus, proportion=self.linearize_params)
         else:
             mus = np.zeros(1)
 
@@ -486,7 +488,7 @@ def determine_information_and_output(drift: np.ndarray,
     Pmc = compute_Pmc(Pm=Pm, m=m, exp_output=exp_output)
 
     # Iterate algorithm
-    for _ in trange(num_iters):
+    for _ in range(num_iters):
         # Compute new P(m)
         Pm = compute_Pm(Pmc=Pmc, Pc=Pc, c=c)
 
@@ -529,6 +531,21 @@ def determine_information_and_output(drift: np.ndarray,
     return info, avg_drift, std_drift, avg_entropy, std_entropy, Pmc, Pm
 
 
+def determine_information_and_output_multiprocessing(i_j: Tuple[int, int],
+                                                     lam_grid: np.ndarray,
+                                                     mu_grid: np.ndarray,
+                                                     **kwargs) -> Tuple[Tuple[int, int],
+                                                                        Tuple[float, float, float, float, float,
+                                                                              np.ndarray, np.ndarray]]:
+    """Multiprocessing-friendly version of determine_information_and_output."""
+    i, j = i_j
+    return (i, j), determine_information_and_output(
+        lam=lam_grid[i, j],
+        mu=mu_grid[i, j],
+        **kwargs
+    )
+
+
 def grid_search_information_and_output(drift: np.ndarray,
                                        entropy: np.ndarray,
                                        Pc: np.ndarray,
@@ -567,6 +584,20 @@ def grid_search_information_and_output(drift: np.ndarray,
     if save_dir is not None:
         save_dir.mkdir(parents=True, exist_ok=True)
 
+    determine_information_and_output_multiprocessing_fn = partial(
+        determine_information_and_output_multiprocessing,
+        drift=drift,
+        entropy=entropy,
+        Pc=Pc,
+        c=c,
+        m=m,
+        lam_grid=lam_grid,
+        mu_grid=mu_grid,
+        num_iters=num_iters,
+        verbosity=verbosity,
+        save_dir=save_dir
+    )
+
     # Get grid shapes
     lagrangian_grid_shape = lam_grid.shape
     input_grid_shape = c.shape
@@ -580,21 +611,12 @@ def grid_search_information_and_output(drift: np.ndarray,
     Pmc_grid = np.zeros((*lagrangian_grid_shape, *input_grid_shape))
     Pm_grid = np.zeros((*lagrangian_grid_shape, *input_grid_shape))
 
-    for i, j in tqdm(product(range(lam_grid.shape[0]), range(lam_grid.shape[1])), total=lam_grid.size):
-        info_grid[i, j], avg_drift_grid[i, j], std_drift_grid[i, j], avg_entropy_grid[i, j], \
-            std_entropy_grid[i, j], Pmc_grid[i, j], Pm_grid[i, j] = \
-            determine_information_and_output(
-                drift=drift,
-                entropy=entropy,
-                Pc=Pc,
-                c=c,
-                m=m,
-                lam=lam_grid[i, j],
-                mu=mu_grid[i, j],
-                num_iters=num_iters,
-                verbosity=verbosity,
-                save_dir=save_dir
-            )
+    with Pool() as p:
+        for (i, j), results in tqdm(p.imap(determine_information_and_output_multiprocessing_fn,
+                                           product(range(lam_grid.shape[0]), range(lam_grid.shape[1]))),
+                                    total=lam_grid.size):
+            info_grid[i, j], avg_drift_grid[i, j], std_drift_grid[i, j], avg_entropy_grid[i, j], \
+            std_entropy_grid[i, j], Pmc_grid[i, j], Pm_grid[i, j] = results
 
     return info_grid, avg_drift_grid, std_drift_grid, avg_entropy_grid, std_entropy_grid, Pmc_grid, Pm_grid
 
