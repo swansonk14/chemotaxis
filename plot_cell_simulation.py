@@ -8,7 +8,12 @@ import numpy as np
 from tap import Tap
 from tqdm import tqdm, trange
 
-from rate_distortion_drift import plot_output, set_up_methylation_levels_and_ligand_concentrations
+from rate_distortion_drift import (
+    METHYLATION_MAX,
+    METHYLATION_MIN,
+    plot_output,
+    set_up_methylation_levels_and_ligand_concentrations
+)
 
 
 # Header for RapidCell output file
@@ -129,27 +134,50 @@ def plot_ligand_methylation_distribution(data: List[Dict[str, np.ndarray]]) -> N
 
     :param data: A list of dictionaries containing data for each cell in the simulation.
     """
-    m, c = set_up_methylation_levels_and_ligand_concentrations()
+    # Set up ligand and methylation grid
+    ligand_concentrations = [l for cell_data in data for l in cell_data['ligand']]
+    methylation_levels = [m for cell_data in data for m in cell_data['methylation']]
+    log_c_min, log_c_max = np.min(ligand_concentrations), np.max(ligand_concentrations)
+    m_min, m_max = min(METHYLATION_MIN, np.min(methylation_levels)), max(METHYLATION_MAX, np.max(methylation_levels))
+
+    m, c = set_up_methylation_levels_and_ligand_concentrations(
+        m_min=m_min,
+        m_max=m_max,
+        log_c_min=log_c_min,
+        log_c_max=log_c_max
+    )
     log_c = np.log10(c)
     mi, log_ci = m[:, 0], log_c[0]
-    Pmc = np.zeros(m.shape)
+    count_grid = np.zeros(m.shape)
+    drift_grid = np.zeros(m.shape)
 
+    # Count occurances of ligand-methylation pairs
     for cell_data in tqdm(data):
-        cell_data['ligand'] = log_ligand_concentration(cell_data['x'])
-        valid_indices = (np.min(log_ci) <= cell_data['ligand']) & (cell_data['ligand'] <= np.max(log_ci))
+        valid_indices = (log_c_min <= cell_data['ligand']) & \
+                        (cell_data['ligand'] <= log_c_max) & \
+                        (m_min <= cell_data['methylation']) & \
+                        (cell_data['methylation'] <= m_max)
 
         ligand = cell_data['ligand'][valid_indices]
         methylation = cell_data['methylation'][valid_indices]
+        drift = cell_data['drift'][valid_indices]
 
         c_indices = np.searchsorted(log_ci, ligand)
         m_indices = np.searchsorted(mi, methylation)
 
-        for m_index, c_index in zip(m_indices, c_indices):
-            Pmc[m_index, c_index] += 1
+        for m_index, c_index, d in zip(m_indices, c_indices, drift):
+            count_grid[m_index, c_index] += 1
+            drift_grid[m_index, c_index] += d
 
-    Pmc /= Pmc.sum(axis=0)
+    # Normalize ligand-methylation counts
+    count_norm = count_grid.sum(axis=0)
 
+    Pmc = count_grid / (count_norm + (count_norm == 0))  # ensure no divide by zero error
+    avg_drift_grid = drift_grid / (count_grid + (count_grid == 0))  # ensure no divide by zero error
+
+    # Plot ligand-methylation distribution
     plot_output(output=Pmc, output_type='$P(m|c)$', c=c, m=m, plot_max=False)
+    plot_output(output=avg_drift_grid, output_type='Drift', c=c, m=m, plot_max=False)
 
 
 def plot_cell_simulation(args: Args) -> None:
@@ -157,9 +185,10 @@ def plot_cell_simulation(args: Args) -> None:
     # Load data
     data = load_data(path=args.data_path)
 
-    # Compute running average drift
+    # Compute drift and ligand concentrations
     for cell_data in tqdm(data):
         cell_data['drift'] = compute_running_average_drift(x=cell_data['x'], time=cell_data['time'])
+        cell_data['ligand'] = log_ligand_concentration(cell_data['x'])
 
     # Plot cell paths
     plot_cell_paths(data=data, color_gradient=args.color_gradient)

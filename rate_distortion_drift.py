@@ -136,19 +136,32 @@ CMAP = plt.get_cmap('viridis')
 LEVELS = 64
 EPS = np.spacing(1)
 DPI = 300
+METHYLATION_MIN = 0.0
+METHYLATION_MAX = 8.0
 
 
-def set_up_methylation_levels_and_ligand_concentrations() -> Tuple[np.ndarray, np.ndarray]:
+def set_up_methylation_levels_and_ligand_concentrations(m_min: float = METHYLATION_MIN,
+                                                        m_max: float = METHYLATION_MAX,
+                                                        m_num: int = 1000,
+                                                        log_c_min: float = -3,
+                                                        log_c_max: float = 3,
+                                                        c_num: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
     """
     Sets up methylation levels and ligand concentrations.
 
+
+    :param m_min: Minimum methylation level.
+    :param m_max: Maximum methylation level.
+    :param m_num: Number of methylation levels.
+    :param log_c_min: Log base 10 of the minimum ligand concentration.
+    :param log_c_max: Log base 10 of the maximum ligand concentration.
+    :param c_num: Number of ligand concentrations.
     :return: A tuple containing:
                - m (np.ndarray): a matrix of methylation levels (differing across the rows)
                - c (np.ndarray): a matrix of ligand concentrations (differing across the columns)
     """
-    num_methylation_levels = num_ligand_concentrations = 1000  # Number of levels/concentrations
-    mi = np.linspace(0, 8, num_methylation_levels)  # Methylation levels
-    ci = np.logspace(-3, 3, num_ligand_concentrations)  # Ligand concentrations (log space)
+    mi = np.linspace(m_min, m_max, m_num)  # Methylation levels
+    ci = np.logspace(log_c_min, log_c_max, c_num)  # Ligand concentrations (log space)
 
     c, m = np.meshgrid(ci, mi)  # Mesh grid of ligand concentrations and methylation levels
 
