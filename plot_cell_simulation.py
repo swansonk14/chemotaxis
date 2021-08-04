@@ -1,17 +1,20 @@
 """Plots the movement of cells in a RapidCell simulation."""
+from itertools import product
 from pathlib import Path
 from typing import Dict, List, Literal, Union
 
+from matplotlib.colors import Normalize
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.polynomial import Polynomial
 from tap import Tap
 from tqdm import tqdm, trange
 
 from rate_distortion_drift import (
+    CMAP,
     METHYLATION_MAX,
     METHYLATION_MIN,
-    plot_output,
     set_up_methylation_levels_and_ligand_concentrations
 )
 
@@ -25,6 +28,8 @@ class Args(Tap):
     """Path to a file containing the output from a RapidCell simulation."""
     color_gradient: Literal['time', 'orientation', 'CheA-P', 'CheY-P', 'methylation', 'CCW_bias', 'drift'] = 'time'
     """The parameter to use to determine the color gradient."""
+    polyfit: bool = False
+    """Whether to fit a polynomial to the ligand-methylation data."""
 
 
 def log_ligand_concentration(x: Union[float, np.ndarray], rate: float = 0.001) -> Union[float, np.ndarray]:
@@ -88,6 +93,10 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
     # Plot cell movements
     fig, ax1 = plt.subplots()
 
+    # Get min and max for color gradient normalization
+    color_data = [c for cell_data in data for c in cell_data[color_gradient]]
+    norm = Normalize(vmin=np.min(color_data), vmax=np.max(color_data))
+
     # Iterate over individual cells
     for cell_data in tqdm(data):
         # Extract line segments from cell movement
@@ -95,10 +104,10 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
         # Plot line segments
-        lc = LineCollection(segments, cmap='viridis')
+        lc = LineCollection(segments, norm=norm, cmap=CMAP)
         lc.set_array(cell_data[color_gradient])
         lc.set_linewidth(2)
-        line = ax1.add_collection(lc)
+        ax1.add_collection(lc)
 
         # Add drift at final location
         drift = (cell_data['x'][-1] - cell_data['x'][0]) / (cell_data['time'][-1] - cell_data['time'][0])
@@ -110,7 +119,7 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
     min_x, max_x = np.min(X), np.max(X)
     min_y, max_y = np.min(Y), np.max(Y)
 
-    cbar = fig.colorbar(line, ax=ax1)
+    cbar = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=CMAP), ax=ax1)
     cbar.set_label(color_gradient)
     ax1.set_xlim(min_x, max_x)
     ax1.set_ylim(min_y, max_y)
@@ -128,11 +137,27 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
     plt.close()
 
 
-def plot_ligand_methylation_distribution(data: List[Dict[str, np.ndarray]]) -> None:
+def poly_str(poly: Polynomial) -> str:
+    """
+    Converts a polynomial into a LaTeX string.
+
+    :param poly: A Polynomial object.
+    :return: A LaTeX string representation of the Polynomial.
+    """
+    return ''.join(
+        f'{"" if i == 0 else "$+$" if coef >= 0 else "$-$"}'  # sign
+        f'{abs(coef):.2e}'  # coefficient
+        f'{"" if i == 0 else f"$x^{i}$"}'  # x power
+        for i, coef in enumerate(poly.coef)
+    )
+
+
+def plot_ligand_methylation_distribution(data: List[Dict[str, np.ndarray]], polyfit: bool) -> None:
     """
     Plots the distribution of methylation levels given ligand concentrations.
 
     :param data: A list of dictionaries containing data for each cell in the simulation.
+    :param polyfit: Whether to fit a polynomial to the data.
     """
     # Set up ligand and methylation grid
     ligand_concentrations = [l for cell_data in data for l in cell_data['ligand']]
@@ -149,7 +174,6 @@ def plot_ligand_methylation_distribution(data: List[Dict[str, np.ndarray]]) -> N
     log_c = np.log10(c)
     mi, log_ci = m[:, 0], log_c[0]
     count_grid = np.zeros(m.shape)
-    drift_grid = np.zeros(m.shape)
 
     # Count occurances of ligand-methylation pairs
     for cell_data in tqdm(data):
@@ -160,24 +184,42 @@ def plot_ligand_methylation_distribution(data: List[Dict[str, np.ndarray]]) -> N
 
         ligand = cell_data['ligand'][valid_indices]
         methylation = cell_data['methylation'][valid_indices]
-        drift = cell_data['drift'][valid_indices]
 
         c_indices = np.searchsorted(log_ci, ligand)
         m_indices = np.searchsorted(mi, methylation)
 
-        for m_index, c_index, d in zip(m_indices, c_indices, drift):
+        for m_index, c_index in zip(m_indices, c_indices):
             count_grid[m_index, c_index] += 1
-            drift_grid[m_index, c_index] += d
 
     # Normalize ligand-methylation counts
     count_norm = count_grid.sum(axis=0)
+    Pmc = count_grid / (count_norm + (count_norm == 0))  # mask to ensure no divide by zero error
 
-    Pmc = count_grid / (count_norm + (count_norm == 0))  # ensure no divide by zero error
-    avg_drift_grid = drift_grid / (count_grid + (count_grid == 0))  # ensure no divide by zero error
+    plt.contourf(log_c, m, Pmc, levels=64, cmap=plt.get_cmap('viridis'))
+    plt.colorbar()
 
-    # Plot ligand-methylation distribution
-    plot_output(output=Pmc, title='$P(m|c)$', c=c, m=m, plot_max=False)
-    plot_output(output=avg_drift_grid, title='Drift', c=c, m=m, plot_max=False)
+    # Fit a polynomial to the data
+    if polyfit:
+        X, Y = [], []
+        for i in range(m.shape[0]):
+            for j in range(m.shape[1]):
+                if m[i, j] < 8.0:
+                    X += [log_c[i, j]] * int(count_grid[i, j])
+                    Y += [m[i, j]] * int(count_grid[i, j])
+
+        poly = Polynomial.fit(X, Y, deg=7, window=[min(X), max(X)])
+
+        y_fit = poly(log_ci)
+        indices_over_8 = np.where(y_fit > 8.0)[0]
+        first_index_before_8 = max(0, indices_over_8[0] - 1) if len(indices_over_8) > 0 else None
+
+        plt.plot(log_ci[:first_index_before_8], y_fit[:first_index_before_8], color='red', label=poly_str(poly))
+        plt.legend()
+
+    plt.title('$P(m|c)$')
+    plt.xlabel(r'Ligand concentration $\log_{10}(c)$')
+    plt.ylabel('Methylation level $m$')
+    plt.show()
 
 
 def plot_cell_simulation(args: Args) -> None:
@@ -194,7 +236,7 @@ def plot_cell_simulation(args: Args) -> None:
     plot_cell_paths(data=data, color_gradient=args.color_gradient)
 
     # Plot distribution of methylation levels given ligand concentrations
-    plot_ligand_methylation_distribution(data=data)
+    plot_ligand_methylation_distribution(data=data, polyfit=args.polyfit)
 
 
 if __name__ == '__main__':
