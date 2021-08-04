@@ -248,7 +248,7 @@ def compute_drift_and_entropy_production(c: np.ndarray,
 
 
 def plot_output(output: np.ndarray,
-                output_type: str,
+                title: str,
                 c: np.ndarray,
                 m: np.ndarray,
                 plot_max: bool = False,
@@ -258,7 +258,7 @@ def plot_output(output: np.ndarray,
 
     :param output: A matrix containing the output of interest for different methylation levels (rows)
                    and ligand concentrations (columns).
-    :param output_type: The name of the type of output.
+    :param title: The name of the type of output.
     :param c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
     :param plot_max: Whether to plot the maximum y value for each x value.
@@ -274,7 +274,7 @@ def plot_output(output: np.ndarray,
         plt.plot(log_c[0], m[maxi, 0], color='red', label='max')
         plt.legend(loc='upper left')
 
-    plt.title(f'{output_type} for given ligand concentration and methylation level')
+    plt.title(title)
     plt.xlabel(r'Ligand concentration $\log_{10}(c)$')
     plt.ylabel('Methylation level $m$')
 
@@ -753,7 +753,7 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
     log_c = np.log10(c)
     sqrt_size = int(np.ceil(np.sqrt(len(parameters))))  # Number of rows/columns in a square that can hold all the plots
 
-    fig, axes = plt.subplots(nrows=sqrt_size, ncols=sqrt_size, figsize=sqrt_size * np.array([6.4, 4.8]) * 0.75)
+    fig, axes = plt.subplots(nrows=sqrt_size, ncols=sqrt_size, figsize=sqrt_size * np.array([6.4, 4.8]) * 1.0)
     axes = [axes] if sqrt_size == 1 else axes.flat
 
     for ax, distribution, parameter, info, avg_out, std_out in tqdm(zip(axes, distributions, parameters,
@@ -813,7 +813,7 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
     size = lam_grid.size
     sqrt_size = np.sqrt(size)
 
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=sqrt_size * np.array([6.4, 4.8]) * 0.75)
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=sqrt_size * np.array([6.4, 4.8]) * 1.0)
 
     # Ensure axes is a 2d array
     if size == 1:
@@ -877,7 +877,7 @@ def run_simulation(args: Args) -> None:
         if args.outputs == {'drift'}:
             plot_output(
                 output=drift,
-                output_type='Drift',
+                title='Drift',
                 c=c,
                 m=m,
                 plot_max=True,
@@ -887,7 +887,7 @@ def run_simulation(args: Args) -> None:
         elif args.outputs == {'entropy'}:
             plot_output(
                 output=entropy,
-                output_type='Entropy',
+                title='Entropy',
                 c=c,
                 m=m,
                 plot_max=True,
@@ -915,7 +915,7 @@ def run_simulation(args: Args) -> None:
     if args.verbosity >= 1:
         plot_output(
             output=Pc,
-            output_type='$P(c)$',
+            title='$P(c)$',
             c=c,
             m=m,
             save_path=args.save_dir / 'pc.png' if args.save_dir is not None else None

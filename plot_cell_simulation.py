@@ -176,8 +176,8 @@ def plot_ligand_methylation_distribution(data: List[Dict[str, np.ndarray]]) -> N
     avg_drift_grid = drift_grid / (count_grid + (count_grid == 0))  # ensure no divide by zero error
 
     # Plot ligand-methylation distribution
-    plot_output(output=Pmc, output_type='$P(m|c)$', c=c, m=m, plot_max=False)
-    plot_output(output=avg_drift_grid, output_type='Drift', c=c, m=m, plot_max=False)
+    plot_output(output=Pmc, title='$P(m|c)$', c=c, m=m, plot_max=False)
+    plot_output(output=avg_drift_grid, title='Drift', c=c, m=m, plot_max=False)
 
 
 def plot_cell_simulation(args: Args) -> None:
