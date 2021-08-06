@@ -34,6 +34,8 @@ class Args(Tap):
     """The parameter to use to determine the color gradient."""
     polyfit: bool = False
     """Whether to fit a polynomial to the ligand-methylation data."""
+    poly_degree: int = 7
+    """Degree of the polynomial to fit to the ligand-methylation data."""
 
 
 def log_ligand_concentration(x: Union[float, np.ndarray], rate: float = 0.001) -> Union[float, np.ndarray]:
@@ -150,12 +152,32 @@ def poly_str(poly: Polynomial) -> str:
     )
 
 
-def plot_ligand_methylation_distribution(data: List[Dict[str, np.ndarray]], polyfit: bool) -> None:
+def poly_str_java(poly: Polynomial,
+                  var_name: str = 'logS') -> str:
+    """
+    Converts a polynomial into a line of Java code.
+
+    :param poly: A Polynomial object.
+    :param var_name: The name of the x variable in the polynomial.
+    :return: A string representation of Java code to compute the polynomial.
+    """
+    return 'meth = ' + ''.join(
+        f'{"" if i == 0 else " + " if coef >= 0 else " - "}'  # sign
+        f'{abs(coef)}'  # coefficient
+        f'{"" if i == 0 else f" * Math.pow({var_name}, {i})"}'  # x power
+        for i, coef in enumerate(poly.coef)
+    ) + ';'
+
+
+def plot_ligand_methylation_distribution(data: List[Dict[str, np.ndarray]],
+                                         polyfit: bool,
+                                         poly_degree: int) -> None:
     """
     Plots the distribution of methylation levels given ligand concentrations.
 
     :param data: A list of dictionaries containing data for each cell in the simulation.
     :param polyfit: Whether to fit a polynomial to the data.
+    :param poly_degree: Degree of the polynomial to fit to the ligand-methylation data.
     """
     # Set up ligand and methylation grid
     ligand_concentrations = [l for cell_data in data for l in cell_data['ligand']]
@@ -205,7 +227,9 @@ def plot_ligand_methylation_distribution(data: List[Dict[str, np.ndarray]], poly
                     X += [log_c[i, j]] * int(count_grid[i, j])
                     Y += [m[i, j]] * int(count_grid[i, j])
 
-        poly = Polynomial.fit(X, Y, deg=7, window=[min(X), max(X)])
+        poly = Polynomial.fit(X, Y, deg=poly_degree, window=[min(X), max(X)])
+
+        print(poly_str_java(poly))
 
         y_fit = poly(log_ci)
         indices_over_8 = np.where(y_fit > 8.0)[0]
@@ -234,7 +258,7 @@ def plot_cell_simulation(args: Args) -> None:
     plot_cell_paths(data=data, color_gradient=args.color_gradient)
 
     # Plot distribution of methylation levels given ligand concentrations
-    plot_ligand_methylation_distribution(data=data, polyfit=args.polyfit)
+    plot_ligand_methylation_distribution(data=data, polyfit=args.polyfit, poly_degree=args.poly_degree)
 
 
 if __name__ == '__main__':
