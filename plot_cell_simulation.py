@@ -22,6 +22,10 @@ from rate_distortion_drift import (
 # Header for RapidCell output file
 COLUMNS = ['x', 'y', 'orientation', 'CheA-P', 'CheY-P', 'methylation', 'CCW_bias']
 
+# Arena boundaries
+X_MIN = Y_MIN = 0.0
+X_MAX = Y_MAX = 20.0
+
 
 class Args(Tap):
     data_path: Path
@@ -113,16 +117,10 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
         drift = (cell_data['x'][-1] - cell_data['x'][0]) / (cell_data['time'][-1] - cell_data['time'][0])
         ax1.text(cell_data['x'][-1], cell_data['y'][-1], rf'{1000 * drift:.2f} $\mu$m/s', color='b')
 
-    X = [x for cell_data in data for x in cell_data['x']]
-    Y = [y for cell_data in data for y in cell_data['y']]
-
-    min_x, max_x = np.min(X), np.max(X)
-    min_y, max_y = np.min(Y), np.max(Y)
-
     cbar = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=CMAP), ax=ax1)
     cbar.set_label(color_gradient)
-    ax1.set_xlim(min_x, max_x)
-    ax1.set_ylim(min_y, max_y)
+    ax1.set_xlim(X_MIN, X_MAX)
+    ax1.set_ylim(Y_MIN, Y_MAX)
     ax1.set_xlabel('X position')
     ax1.set_ylabel('Y position')
 
@@ -131,7 +129,7 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
     ax2.set_xlabel(r'Ligand concentration $\log(c)$', color='r')
     ax2.tick_params(axis='x', colors='red')
     ax2.spines['top'].set_color('red')
-    ax2.set_xlim(log_ligand_concentration(min_x), log_ligand_concentration(max_x))
+    ax2.set_xlim(log_ligand_concentration(X_MIN), log_ligand_concentration(X_MAX))
 
     plt.show()
     plt.close()
