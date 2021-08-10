@@ -15,6 +15,7 @@ from rate_distortion_drift import (
     METHYLATION_MAX,
     METHYLATION_MIN,
     compute_mutual_information,
+    plot_output,
     set_up_methylation_levels_and_ligand_concentrations
 )
 
@@ -274,6 +275,7 @@ def fit_polynomial(m_c_count_grid: np.ndarray,
 def plot_ligand_methylation_distribution(Pmc: np.ndarray,
                                          log_c: np.ndarray,
                                          m: np.ndarray,
+                                         info: float = None,
                                          polynomial: Polynomial = None) -> None:
     """
     Plots the distribution of methylation levels given ligand concentrations.
@@ -281,6 +283,7 @@ def plot_ligand_methylation_distribution(Pmc: np.ndarray,
     :param Pmc: The conditional distribution P(m|c) of the methylation level given the ligand concentration.
     :param log_c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
+    :param info: Mutual information of Pmc.
     :param polynomial: A Polynomial that has been fit to the P(m|c) data.
     """
     if polynomial is not None:
@@ -288,11 +291,11 @@ def plot_ligand_methylation_distribution(Pmc: np.ndarray,
         y_fit = polynomial(log_ci)
         indices_over_8 = np.where(y_fit > 8.0)[0]
         first_index_before_8 = max(0, indices_over_8[0] - 1) if len(indices_over_8) > 0 else None
-
         plt.plot(log_ci[:first_index_before_8], y_fit[:first_index_before_8], color='red', label=poly_str(polynomial))
-        plt.legend()
 
     plt.contourf(log_c, m, Pmc, levels=64, cmap=plt.get_cmap('viridis'))
+    plt.scatter([], [], s=3, color='cyan', label=f'Mutual information = {info:.2f}')
+    plt.legend()
     plt.colorbar()
     plt.title('$P(m|c)$')
     plt.xlabel(r'Ligand concentration $\log_{10}(c)$')
@@ -331,7 +334,6 @@ def plot_cell_simulation(args: Args) -> None:
 
     # Compute mutual information
     info = compute_mutual_information(Pmc=Pmc, Pc=Pc, Pm=Pm, c=c, m=m)
-    print(f'Mutual information = {info:.2f}')
 
     # Optionally fit a polynomial to P(m|c)
     if args.polyfit:
@@ -340,7 +342,13 @@ def plot_cell_simulation(args: Args) -> None:
         polynomial = None
 
     # Plot P(m|c) including optional polynomial fit
-    plot_ligand_methylation_distribution(Pmc=Pmc, log_c=log_c, m=m, polynomial=polynomial)
+    plot_ligand_methylation_distribution(Pmc=Pmc, log_c=log_c, m=m, info=info, polynomial=polynomial)
+
+    # Plot P(c)
+    plot_output(output=Pc, title='$P(c)$', c=c, m=m)
+
+    # Plot P(m)
+    plot_output(output=Pm, title='$P(m)$', c=c, m=m)
 
 
 if __name__ == '__main__':
