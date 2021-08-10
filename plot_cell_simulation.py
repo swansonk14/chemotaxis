@@ -14,6 +14,7 @@ from rate_distortion_drift import (
     CMAP,
     METHYLATION_MAX,
     METHYLATION_MIN,
+    compute_mutual_information,
     set_up_methylation_levels_and_ligand_concentrations
 )
 
@@ -168,14 +169,14 @@ def poly_str_java(poly: Polynomial,
     ) + ';'
 
 
-def set_up_m_and_log_c(data: List[Dict[str, np.ndarray]]) -> Tuple[np.ndarray, np.ndarray]:
+def set_up_m_and_c(data: List[Dict[str, np.ndarray]]) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Sets up methylation levels and (log base 10) ligand concentrations.
+    Sets up methylation levels and ligand concentrations.
 
     :param data: A list of dictionaries containing data for each cell in the simulation.
     :return: A tuple containing:
                - m (np.ndarray): a matrix of methylation levels (differing across the rows)
-               - log_c (np.ndarray): a matrix of (log base 10) ligand concentrations (differing across the columns)
+               - c (np.ndarray): a matrix of ligand concentrations (differing across the columns)
     """
     ligand_concentrations = [l for cell_data in data for l in cell_data['ligand']]
     methylation_levels = [m for cell_data in data for m in cell_data['methylation']]
@@ -188,9 +189,8 @@ def set_up_m_and_log_c(data: List[Dict[str, np.ndarray]]) -> Tuple[np.ndarray, n
         log_c_min=log_c_min,
         log_c_max=log_c_max
     )
-    log_c = np.log10(c)
 
-    return m, log_c
+    return m, c
 
 
 def compute_ligand_methylation_counts(data: List[Dict[str, np.ndarray]],
@@ -206,7 +206,7 @@ def compute_ligand_methylation_counts(data: List[Dict[str, np.ndarray]],
     """
     # Set up count grid
     mi, log_ci = m[:, 0], log_c[0]
-    Pmc_count_grid = np.zeros(m.shape)
+    m_c_count_grid = np.zeros(m.shape)
 
     # Count occurances of ligand-methylation pairs
     for cell_data in tqdm(data):
@@ -222,26 +222,26 @@ def compute_ligand_methylation_counts(data: List[Dict[str, np.ndarray]],
         m_indices = np.searchsorted(mi, methylation)
 
         for m_index, c_index in zip(m_indices, c_indices):
-            Pmc_count_grid[m_index, c_index] += 1
+            m_c_count_grid[m_index, c_index] += 1
 
-    return Pmc_count_grid
+    return m_c_count_grid
 
 
-def compute_empirical_pmc(Pmc_count_grid: np.ndarray) -> np.ndarray:
+def compute_empirical_pmc(m_c_count_grid: np.ndarray) -> np.ndarray:
     """
     Computes the empirical conditional distribution P(m|c) of the methylation level given the ligand concentration.
 
-    :param Pmc_count_grid: A matrix containing the counts of ligand-methylation pairs.
+    :param m_c_count_grid: A matrix containing the counts of ligand-methylation pairs.
     :return: A numpy array containing the empirical conditional distribution P(m|c).
     """
     # Normalize ligand-methylation counts
-    Pmc_count_norm = Pmc_count_grid.sum(axis=0)
-    Pmc = Pmc_count_grid / (Pmc_count_norm + (Pmc_count_norm == 0))  # mask to ensure no divide by zero error
+    m_c_count_norm = m_c_count_grid.sum(axis=0)
+    Pmc = m_c_count_grid / (m_c_count_norm + (m_c_count_norm == 0))  # mask to ensure no divide by zero error
 
     return Pmc
 
 
-def fit_polynomial(Pmc_count_grid: np.ndarray,
+def fit_polynomial(m_c_count_grid: np.ndarray,
                    log_c: np.ndarray,
                    m: np.ndarray,
                    poly_degree: int,
@@ -249,7 +249,7 @@ def fit_polynomial(Pmc_count_grid: np.ndarray,
     """
     Fits a polynomial to the empirical distribution of methylation levels and ligand concentrations.
 
-    :param Pmc_count_grid: A matrix containing the counts of ligand-methylation pairs.
+    :param m_c_count_grid: A matrix containing the counts of ligand-methylation pairs.
     :param log_c: A matrix of ligand concentrations (differing across the columns).
     :param m: A matrix of methylation levels (differing across the rows).
     :param poly_degree: The degree of the polynomial to fit to the ligand-methylation data.
@@ -260,8 +260,8 @@ def fit_polynomial(Pmc_count_grid: np.ndarray,
     for i in range(m.shape[0]):
         for j in range(m.shape[1]):
             if m[i, j] < 8.0:
-                X += [log_c[i, j]] * int(Pmc_count_grid[i, j])
-                Y += [m[i, j]] * int(Pmc_count_grid[i, j])
+                X += [log_c[i, j]] * int(m_c_count_grid[i, j])
+                Y += [m[i, j]] * int(m_c_count_grid[i, j])
 
     polynomial = Polynomial.fit(X, Y, deg=poly_degree, window=[min(X), max(X)])
 
@@ -313,18 +313,29 @@ def plot_cell_simulation(args: Args) -> None:
     # Plot cell paths
     plot_cell_paths(data=data, color_gradient=args.color_gradient)
 
-    # Set up methylation levels m and log ligand concentrations log_c
-    m, log_c = set_up_m_and_log_c(data=data)
+    # Set up methylation levels m and ligand concentrations
+    m, c = set_up_m_and_c(data=data)
+    log_c = np.log10(c)
 
     # Count empirical ligand-methylation pairs
-    Pmc_count_grid = compute_ligand_methylation_counts(data=data, log_c=log_c, m=m)
+    m_c_count_grid = compute_ligand_methylation_counts(data=data, log_c=log_c, m=m)
 
     # Compute empirical conditional distribution P(m|c) by normalizing ligand-methylation counts
-    Pmc = compute_empirical_pmc(Pmc_count_grid=Pmc_count_grid)
+    Pmc = compute_empirical_pmc(m_c_count_grid=m_c_count_grid)
+
+    # Compute empirical marginal distribution P(c)
+    Pc = np.broadcast_to((m_c_count_grid.sum(axis=0) / m_c_count_grid.sum())[np.newaxis, :], Pmc.shape)
+
+    # Compute empirical marginal distribution P(m)
+    Pm = np.broadcast_to((m_c_count_grid.sum(axis=1) / m_c_count_grid.sum())[:, np.newaxis], Pmc.shape)
+
+    # Compute mutual information
+    info = compute_mutual_information(Pmc=Pmc, Pc=Pc, Pm=Pm, c=c, m=m)
+    print(f'Mutual information = {info:.2f}')
 
     # Optionally fit a polynomial to P(m|c)
     if args.polyfit:
-        polynomial = fit_polynomial(Pmc_count_grid=Pmc_count_grid, log_c=log_c, m=m, poly_degree=args.poly_degree)
+        polynomial = fit_polynomial(m_c_count_grid=m_c_count_grid, log_c=log_c, m=m, poly_degree=args.poly_degree)
     else:
         polynomial = None
 
