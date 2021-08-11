@@ -170,30 +170,6 @@ def poly_str_java(poly: Polynomial,
     ) + ';'
 
 
-def set_up_m_and_c(data: List[Dict[str, np.ndarray]]) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Sets up methylation levels and ligand concentrations.
-
-    :param data: A list of dictionaries containing data for each cell in the simulation.
-    :return: A tuple containing:
-               - m (np.ndarray): a matrix of methylation levels (differing across the rows)
-               - c (np.ndarray): a matrix of ligand concentrations (differing across the columns)
-    """
-    ligand_concentrations = [l for cell_data in data for l in cell_data['ligand']]
-    methylation_levels = [m for cell_data in data for m in cell_data['methylation']]
-    log_c_min, log_c_max = np.min(ligand_concentrations), np.max(ligand_concentrations)
-    m_min, m_max = min(METHYLATION_MIN, np.min(methylation_levels)), max(METHYLATION_MAX, np.max(methylation_levels))
-
-    m, c = set_up_methylation_levels_and_ligand_concentrations(
-        m_min=m_min,
-        m_max=m_max,
-        log_c_min=log_c_min,
-        log_c_max=log_c_max
-    )
-
-    return m, c
-
-
 def compute_ligand_methylation_counts(data: List[Dict[str, np.ndarray]],
                                       log_c: np.ndarray,
                                       m: np.ndarray) -> np.ndarray:
@@ -209,18 +185,10 @@ def compute_ligand_methylation_counts(data: List[Dict[str, np.ndarray]],
     mi, log_ci = m[:, 0], log_c[0]
     m_c_count_grid = np.zeros(m.shape)
 
-    # Count occurances of ligand-methylation pairs
+    # Count occurrences of ligand-methylation pairs
     for cell_data in tqdm(data):
-        valid_indices = (np.min(log_c) <= cell_data['ligand']) & \
-                        (cell_data['ligand'] <= np.max(log_c)) & \
-                        (np.min(m) <= cell_data['methylation']) & \
-                        (cell_data['methylation'] <= np.max(m))
-
-        ligand = cell_data['ligand'][valid_indices]
-        methylation = cell_data['methylation'][valid_indices]
-
-        c_indices = np.searchsorted(log_ci, ligand)
-        m_indices = np.searchsorted(mi, methylation)
+        c_indices = np.searchsorted(log_ci, cell_data['ligand'])
+        m_indices = np.searchsorted(mi, cell_data['methylation'])
 
         for m_index, c_index in zip(m_indices, c_indices):
             m_c_count_grid[m_index, c_index] += 1
@@ -317,7 +285,12 @@ def plot_cell_simulation(args: Args) -> None:
     plot_cell_paths(data=data, color_gradient=args.color_gradient)
 
     # Set up methylation levels m and ligand concentrations
-    m, c = set_up_m_and_c(data=data)
+    m, c = set_up_methylation_levels_and_ligand_concentrations(
+        m_min=METHYLATION_MIN,
+        m_max=METHYLATION_MAX,
+        log_c_min=log_ligand_concentration(X_MIN),
+        log_c_max=log_ligand_concentration(X_MAX)
+    )
     log_c = np.log10(c)
 
     # Count empirical ligand-methylation pairs
