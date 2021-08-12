@@ -1,6 +1,6 @@
 """Plots the movement of cells in a RapidCell simulation."""
 from pathlib import Path
-from typing import Dict, List, Literal, Tuple, Union
+from typing import Dict, List, Literal, Union
 
 from matplotlib.colors import Normalize
 from matplotlib.collections import LineCollection
@@ -25,7 +25,8 @@ COLUMNS = ['x', 'y', 'orientation', 'CheA-P', 'CheY-P', 'methylation', 'CCW_bias
 
 # Arena boundaries
 X_MIN = Y_MIN = 0.0
-X_MAX = Y_MAX = 20.0
+X_MAX = Y_MAX = 16.0
+X_FOR_MAX_METH = 14.4
 
 
 class Args(Tap):
