@@ -278,7 +278,7 @@ def plot_output(output: np.ndarray,
     """
     log_c = np.log10(c)
 
-    fig, ax = plt.subplots(figsize=FIGSIZE * 1.1)
+    fig, ax = plt.subplots(figsize=FIGSIZE * 1.2)
     im = ax.contourf(log_c, m, output, levels=LEVELS, cmap=CMAP)
     fig.colorbar(im, ax=ax)
 
@@ -669,7 +669,7 @@ def plot_information_and_output(infos: List[float],
     :param units: Units of the output type.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
-    fig, ax = plt.subplots(figsize=FIGSIZE * 1.1)
+    fig, ax = plt.subplots(figsize=FIGSIZE * 1.2)
 
     ax.plot(infos, avg_outs, 'x')
     ax.set_title(f'{output_type} vs Mutual Information')
@@ -741,7 +741,6 @@ def plot_information_and_outputs_3d(info_grid: np.ndarray,
     else:
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
-        breakpoint()
         plot_information_and_outputs_3d_on_axis(
             ax=ax,
             info_grid=info_grid,
@@ -804,7 +803,7 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
     log_c = np.log10(c)
     sqrt_size = int(np.ceil(np.sqrt(len(parameters))))  # Number of rows/columns in a square that can hold all the plots
 
-    fig, axes = plt.subplots(nrows=sqrt_size, ncols=sqrt_size, figsize=sqrt_size * FIGSIZE * 1.1)
+    fig, axes = plt.subplots(nrows=sqrt_size, ncols=sqrt_size, figsize=sqrt_size * FIGSIZE * 1.2)
     axes = [axes] if sqrt_size == 1 else axes.flat
 
     for ax, distribution, parameter, info, avg_out, std_out in tqdm(zip(axes, distributions, parameters,
@@ -813,7 +812,7 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
         im = ax.contourf(log_c, m, distribution, levels=LEVELS, cmap=CMAP)
         fig.colorbar(im, ax=ax)
         ax.title.set_text(f'{parameter_name}$=${parameter:.2e}, '
-                          f'I$=${info:.2e} {INFORMATION_UNITS}, '
+                          f'I$=${info:.2e} {INFORMATION_UNITS},\n'
                           rf'{output_type}$=${avg_plus_minus_std_string(avg_out, std_out)} {units}')
 
     fig.suptitle(title, fontsize=10 * sqrt_size)
