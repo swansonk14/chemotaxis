@@ -138,6 +138,10 @@ EPS = np.spacing(1)
 DPI = 300
 METHYLATION_MIN = 0.0
 METHYLATION_MAX = 8.0
+DRIFT_UNITS = r'$\mu$m/s'
+ENTROPY_UNITS = r'J $\cdot$ K$^{-1}$'
+INFORMATION_UNITS = 'bits'
+LIGAND_UNITS = 'mM'
 
 
 def set_up_methylation_levels_and_ligand_concentrations(m_min: float = METHYLATION_MIN,
@@ -185,14 +189,14 @@ def compute_drift_and_entropy_production(c: np.ndarray,
     Kson = 1e6  # Active receptors dissociation constant Tsr (mM, paper uses 1E6)
     Kaoff = 0.02  # Inactive receptors dissociation constant Tar (mM, paper uses 0.03)
     Ksoff = 100  # Inactive receptors dissociation constant Tsr (mM, paper uses 100)
-    YT = 9.7  # Total concentration of CheY (muM, paper uses 7.9, range [6; 9.7])
+    YT = 9.7  # Total concentration of CheY (uM, paper uses 7.9, range [6; 9.7])
     k = 1  # Approximation of the susceptibility function.
 
     # Phosphorylation rate parameters (Micali equation S28)
     nu = 0.01  # Proportionality constant between forward and backward rates (paper says << 1)
 
-    kyp = 100  # Rate constant k_y^+ for reaction CheY + ATP --> CheY_p + ADP (muM^{-1}s^{-1})
-    kym = nu * kyp  # Rate constant k_y^- for reaction CheY_p + ADP --> CheY + ATP (muM^{-1}s^{-1})
+    kyp = 100  # Rate constant k_y^+ for reaction CheY + ATP --> CheY_p + ADP (uM^{-1} * s^{-1})
+    kym = nu * kyp  # Rate constant k_y^- for reaction CheY_p + ADP --> CheY + ATP (uM^{-1} * s^{-1})
 
     kzp = 30  # Rate constant k_z^+ for reaction CheY_p + ADP --> CheY + ADP + Pi (s^{-1})
     kzm = nu * kzp  # Rate constant k_z^- for reaction CheY + ADP + Pi --> CheY_p + ADP (s^{-1})
@@ -204,7 +208,10 @@ def compute_drift_and_entropy_production(c: np.ndarray,
     kBm = nu * kBp  # Rate constant k_B^+ for reaction [m]_1 + CH3OH --> [m + 1]_1 + H2O (s^{-1})
     mT = 1e4  # Total number of methylation sites
 
-    # Ligand (local) gradient steepness
+    # Physical constant
+    kb = 1.380649 / 1000  # Boltzmann constant (times 10^{-20} J * K^{-1})
+
+    # Ligand (local) gradient steepness (mm^{-1})
     rel_grad = 0.75
 
     # Methylation free energy (Monod-Wyman-Changeux (MWC) model, Clausznitzer equation 5)
@@ -226,23 +233,24 @@ def compute_drift_and_entropy_production(c: np.ndarray,
             vs * (c / (c + Ksoff) - c / (c + Kson))  # Tsr receptor
     )
 
-    # Drift velocity (Micali equation 1)
-    drift = k * A * (1 - A) * dFdc * rel_grad  # TODO: are the units um/s?
+    # Drift velocity in um/s (Micali equation 1)
+    drift = k * A * (1 - A) * dFdc * rel_grad
 
     # Concentration of phosphorylated CheY (CheY_p)
     # from CheY + ATP --> CheY_p + ADP (kyp rate constant) and CheY + ADP + Pi --> CheY_p + ADP (kzm rate constant)
-    Yp = (kyp * A + kzm) * YT / ((kyp + kym) * A + kzp + kzm)  # TODO: Micali equation S4???
+    # (Micali derived from setting dYp/dt = 0 for the equation between equations S27 and S28)
+    Yp = (kyp * A + kzm) * YT / ((kyp + kym) * A + kzp + kzm)
 
-    # Entropy production of the phosphorylation dynamics (Micali equation S28 without Boltzmann constant kb)
-    dSdty = (kyp * (YT - Yp) - kym * Yp) * A * np.log((kyp * (YT - Yp)) / (kym * Yp)) + \
-            (kzp * Yp - kzm * (YT - Yp)) * np.log((kzp * Yp) / (kzm * (YT - Yp)))
+    # Entropy production of the phosphorylation dynamics (Micali equation S28)
+    dSdty = kb * ((kyp * (YT - Yp) - kym * Yp) * A * np.log((kyp * (YT - Yp)) / (kym * Yp)) +
+                  (kzp * Yp - kzm * (YT - Yp)) * np.log((kzp * Yp) / (kzm * (YT - Yp))))
 
-    # Entropy production of the methylation dynamics (Micali equation S29 without Boltzmann constant kb)
-    dSdtm = (kRp - kRm) * (1 - A) * mT * np.log(kRp / kRm) + \
-            (kBp - kBm) * A**3 * mT * np.log(kBp / kBm)
+    # Entropy production of the methylation dynamics (Micali equation S29)
+    dSdtm = kb * ((kRp - kRm) * (1 - A) * mT * np.log(kRp / kRm) +
+                  (kBp - kBm) * A**3 * mT * np.log(kBp / kBm))
 
-    # Entropy production of the phosphorylation and methylation dynamics
-    entropy_production = (dSdty + dSdtm) / 1000  # Micali equation S29 (divide by 1000 to use smaller values)
+    # Entropy production of the phosphorylation and methylation dynamics in J * K^{-1} (times 10^{-20})
+    entropy_production = (dSdty + dSdtm)  # Micali equation S29
 
     return drift, entropy_production
 
@@ -275,7 +283,7 @@ def plot_output(output: np.ndarray,
         plt.legend(loc='upper left')
 
     plt.title(title)
-    plt.xlabel(r'Ligand concentration $\log_{10}(c)$')
+    plt.xlabel(r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})')
     plt.ylabel('Methylation level $m$')
 
     if save_path is not None:
@@ -639,6 +647,7 @@ def grid_search_information_and_output(drift: np.ndarray,
 def plot_information_and_output(infos: List[float],
                                 avg_outs: List[float],
                                 output_type: str,
+                                units: str,
                                 save_path: Path = None) -> None:
     """
     Plot the (maximum/minimum) mean output vs the (minimum) mutual information.
@@ -646,12 +655,13 @@ def plot_information_and_output(infos: List[float],
     :param infos: A list of (minimum) mutual information values.
     :param avg_outs: A list of (maximum/minimum) average output values.
     :param output_type: The name of the type of output.
+    :param units: Units of the output type.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
     plt.plot(infos, avg_outs, 'x')
     plt.title(f'{output_type} vs Mutual Information')
-    plt.ylabel(output_type)
-    plt.xlabel('Mutual Information $I(m; c)$ (bits)')
+    plt.ylabel(f'{output_type} ({units})')
+    plt.xlabel(f'Mutual Information ({INFORMATION_UNITS})')
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -688,9 +698,9 @@ def plot_information_and_outputs_3d(info_grid: np.ndarray,
         for j, (info, avg_drift, avg_entropy) in enumerate(zip(info_row, avg_drift_row, avg_entropy_row)):
             ax.text(info, avg_drift, avg_entropy, str(j + 1), color=color)
 
-    ax.set_xlabel('Mutual Information $I(m; c)$ (bits)')
-    ax.set_ylabel('Drift')
-    ax.set_zlabel('Entropy')
+    ax.set_xlabel(f'Mutual Information ({INFORMATION_UNITS})')
+    ax.set_ylabel(f'Drift ({DRIFT_UNITS})')
+    ax.set_zlabel(f'Entropy ({ENTROPY_UNITS})')
     ax.set_title('Drift vs Entropy vs Mutual Information')
 
     if save_dir is not None:
@@ -733,6 +743,7 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
                                          avg_outs: List[float],
                                          std_outs: List[float],
                                          output_type: str,
+                                         units: str,
                                          title: str,
                                          save_path: Path = None) -> None:
     """
@@ -747,6 +758,7 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
     :param avg_outs: A list of maximum mean output values.
     :param std_outs: A list of output standard deviation values.
     :param output_type: The name of the type of output.
+    :param units: Units of the output type.
     :param title: The title of the plot.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
@@ -762,12 +774,14 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
         im = ax.contourf(log_c, m, distribution, levels=LEVELS, cmap=CMAP)
         fig.colorbar(im, ax=ax)
         ax.title.set_text(f'{parameter_name}$=${parameter:.2e}, '
-                          f'I$=${info:.2e}, '
-                          rf'{output_type}$=${avg_plus_minus_std_string(avg_out, std_out)}')
+                          f'I$=${info:.2e} {INFORMATION_UNITS}, '
+                          rf'{output_type}$=${avg_plus_minus_std_string(avg_out, std_out)} {units}')
 
     fig.suptitle(title, fontsize=10 * sqrt_size)
-    fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical', fontsize=7 * sqrt_size)  # y label
-    fig.text(0.5, 0.04, r'Ligand concentration $\log_{10}(c)$', ha='center', fontsize=7 * sqrt_size)  # x label
+    fig.text(0.04, 0.5, 'Methylation level $m$',
+             va='center', rotation='vertical', fontsize=7 * sqrt_size)  # y label
+    fig.text(0.5, 0.04, r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})',
+             ha='center', fontsize=7 * sqrt_size)  # x label
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -828,10 +842,10 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
         ax = axes[i, j]
         im = ax.contourf(log_c, m, distribution_grid[i, j], levels=LEVELS, cmap=CMAP)
         fig.colorbar(im, ax=ax)
-        ax.set_title((f'I$=${info_grid[i, j]:.2e}, ' if info_grid is not None else '') +
-                     (f'V$=${avg_plus_minus_std_string(avg_drift_grid[i, j], std_drift_grid[i, j])}, '
+        ax.set_title((f'I$=${info_grid[i, j]:.2e} {INFORMATION_UNITS}, ' if info_grid is not None else '') +
+                     (f'V$=${avg_plus_minus_std_string(avg_drift_grid[i, j], std_drift_grid[i, j])} {DRIFT_UNITS}, '
                       if avg_drift_grid is not None and std_drift_grid is not None else '') +
-                     (f'S$=${avg_plus_minus_std_string(avg_entropy_grid[i, j], std_entropy_grid[i, j])}'
+                     (f'S$=${avg_plus_minus_std_string(avg_entropy_grid[i, j], std_entropy_grid[i, j])} {ENTROPY_UNITS}'
                       if avg_entropy_grid is not None and std_entropy_grid is not None else ''))
 
         if plot_max:
@@ -846,8 +860,10 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
             ax.set_ylabel(rf'$\lambda=${lam_grid[i, j]:.2e}')
 
     fig.suptitle(title, fontsize=10 * sqrt_size)
-    fig.text(0.04, 0.5, 'Methylation level $m$', va='center', rotation='vertical', fontsize=7 * sqrt_size)  # y label
-    fig.text(0.5, 0.04, r'Ligand concentration $\log_{10}(c)$', ha='center', fontsize=7 * sqrt_size)  # x label
+    fig.text(0.04, 0.5, 'Methylation level $m$',
+             va='center', rotation='vertical', fontsize=7 * sqrt_size)  # y label
+    fig.text(0.5, 0.04, r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})',
+             ha='center', fontsize=7 * sqrt_size)  # x label
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -877,7 +893,7 @@ def run_simulation(args: Args) -> None:
         if args.outputs == {'drift'}:
             plot_output(
                 output=drift,
-                title='Drift',
+                title=f'Drift ({DRIFT_UNITS})',
                 c=c,
                 m=m,
                 plot_max=True,
@@ -887,7 +903,7 @@ def run_simulation(args: Args) -> None:
         elif args.outputs == {'entropy'}:
             plot_output(
                 output=entropy,
-                title='Entropy',
+                title=f'Entropy ({ENTROPY_UNITS})',
                 c=c,
                 m=m,
                 plot_max=True,
@@ -978,12 +994,14 @@ def run_simulation(args: Args) -> None:
         # Select output
         if args.outputs == {'drift'}:
             output_type = 'drift'
+            units = DRIFT_UNITS
             avg_out_grid = avg_drift_grid
             std_out_grid = std_drift_grid
             parameters = lam_grid[:, 0]
             parameter_name = r'$\lambda$'
         elif args.outputs == {'entropy'}:
             output_type = 'entropy'
+            units = ENTROPY_UNITS
             avg_out_grid = avg_entropy_grid
             std_out_grid = std_entropy_grid
             parameters = mu_grid[0]
@@ -1000,6 +1018,7 @@ def run_simulation(args: Args) -> None:
             infos=infos,
             avg_outs=avg_outs,
             output_type=output_type.title(),
+            units=units,
             save_path=args.save_dir / f'{output_type}_vs_information.png' if args.save_dir is not None else None
         )
 
@@ -1013,7 +1032,8 @@ def run_simulation(args: Args) -> None:
             infos=infos,
             avg_outs=avg_outs,
             std_outs=std_outs,
-            output_type=output_type
+            output_type=output_type,
+            units=units
         )
 
         # Plot conditional distribution across Lagrangian values

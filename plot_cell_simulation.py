@@ -12,6 +12,8 @@ from tqdm import tqdm, trange
 
 from rate_distortion_drift import (
     CMAP,
+    DRIFT_UNITS,
+    LIGAND_UNITS,
     METHYLATION_MAX,
     METHYLATION_MIN,
     compute_mutual_information,
@@ -119,7 +121,7 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
 
         # Add drift at final location
         drift = (cell_data['x'][-1] - cell_data['x'][0]) / (cell_data['time'][-1] - cell_data['time'][0])
-        ax1.text(cell_data['x'][-1], cell_data['y'][-1], rf'{1000 * drift:.2f} $\mu$m/s', color='b')
+        ax1.text(cell_data['x'][-1], cell_data['y'][-1], rf'{1000 * drift:.2f} {DRIFT_UNITS}', color='b')
 
     cbar = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=CMAP), ax=ax1)
     cbar.set_label(color_gradient)
@@ -130,7 +132,7 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
 
     # Plot ligand concentration
     ax2 = ax1.twiny()
-    ax2.set_xlabel(r'Ligand concentration $\log_{10}(c)$', color='r')
+    ax2.set_xlabel(r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})', color='r')
     ax2.tick_params(axis='x', colors='red')
     ax2.spines['top'].set_color('red')
     ax2.set_xlim(log_ligand_concentration(X_MIN), log_ligand_concentration(X_MAX))
@@ -267,7 +269,7 @@ def plot_ligand_methylation_distribution(Pmc: np.ndarray,
     plt.legend()
     plt.colorbar()
     plt.title('$P(m|c)$')
-    plt.xlabel(r'Ligand concentration $\log_{10}(c)$')
+    plt.xlabel(r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})')
     plt.ylabel('Methylation level $m$')
     plt.show()
 
