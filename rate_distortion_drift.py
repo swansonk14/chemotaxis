@@ -502,10 +502,6 @@ def determine_information_and_output(drift: np.ndarray,
                - Pmc (np.ndarray): the conditional distributions P(m | c)
                - Pm (np.ndarray): the marginal distributions P(m)
     """
-    if save_dir is not None:
-        save_dir = save_dir / 'convergence'
-        save_dir.mkdir(parents=True, exist_ok=True)
-
     # Keep track of values across iterations (if verbosity >= 2)
     infos, avg_drifts, avg_entropies, objectives = [], [], [], []
 
@@ -543,6 +539,10 @@ def determine_information_and_output(drift: np.ndarray,
 
     # Plot I, out, and objective function across iterations
     if verbosity >= 2:
+        if save_dir is not None:
+            save_dir = save_dir / 'convergence'
+            save_dir.mkdir(parents=True, exist_ok=True)
+
         plot_values_across_iterations(
             infos=infos,
             avg_drifts=avg_drifts,
