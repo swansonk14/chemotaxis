@@ -12,6 +12,7 @@ References:
                     Clausznitzer et al., PLOS Computational Biology, 2010
                     https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1000784
 """
+from decimal import Decimal, ROUND_HALF_UP
 from functools import partial
 from itertools import product
 from multiprocessing import Pool
@@ -42,8 +43,8 @@ class Args(Tap):
     """Maximum value of Lagrangian mu for entropy in log space (i.e., min mu = 10^{mu_max})."""
     mu_num: int = 9
     """Number of mu values between mu_min and mu_max."""
-    linearize_params: float = 0.0
-    """The proportion of the middle part of the lambda and mu ranges to change to linear scale instead of log scale."""
+    linearize_params: int = 0
+    """The number of lambda/mu values to space linearly (rather than logarithmically) in the middle of the range."""
     ligand_gradient: float = 0.1
     """The relative gradient of the ligand concentration."""
     verbosity: Literal[0, 1, 2] = 1
@@ -52,7 +53,7 @@ class Args(Tap):
     """Directory where plots and arguments will be saved (if None, displayed instead)."""
 
     @staticmethod
-    def linearize_array_middle(array: np.ndarray, proportion: float) -> np.ndarray:
+    def linearize_array_middle(array: np.ndarray, num: int) -> np.ndarray:
         """
         Linearizes the middle portion of the array.
 
@@ -60,19 +61,20 @@ class Args(Tap):
                  ==> [1e-4, 1e-3, 1e-2, 2.5e+01, 5.0e+01, 7.50e+01, 1e2, 1e3, 1e4]
 
         :param array: An array of values.
-        :param proportion: The proportion of the middle of the array to linearize.
+        :param num: The number of values in the middle of the array to linearize.
         :return: An array of values with the middle portion of the values linearized.
         """
         # Copy params array
         array = array.copy()
 
         # Determine indices for middle portion
-        size = len(array) - 1
-        middle = size / 2
-        diff = size * proportion / 2
-        start_index = round(middle - diff)
-        end_index = round(middle + diff)
-        num = end_index - start_index + 1
+        middle = (len(array) - 1) / 2
+        diff = num // 2
+        start_index = int(Decimal(middle - diff).to_integral_value(rounding=ROUND_HALF_UP))
+        end_index = int(Decimal(middle + diff).to_integral_value(rounding=ROUND_HALF_UP))
+
+        if end_index - start_index == num:
+            end_index -= 1
 
         # Replace middle portion with linear space
         array[start_index:end_index + 1] = np.linspace(array[start_index], array[end_index], num)
@@ -89,8 +91,8 @@ class Args(Tap):
         if 'drift' in self.outputs:
             lams = np.logspace(self.lambda_min, self.lambda_max, self.lambda_num)
 
-            if self.linearize_params > 0.0:
-                lams = self.linearize_array_middle(array=lams, proportion=self.linearize_params)
+            if self.linearize_params > 2:
+                lams = self.linearize_array_middle(array=lams, num=self.linearize_params)
         else:
             lams = np.zeros(1)
 
@@ -106,8 +108,8 @@ class Args(Tap):
         if 'entropy' in self.outputs:
             mus = np.logspace(self.mu_min, self.mu_max, self.mu_num)
 
-            if self.linearize_params > 0.0:
-                mus = self.linearize_array_middle(array=mus, proportion=self.linearize_params)
+            if self.linearize_params > 2:
+                mus = self.linearize_array_middle(array=mus, num=self.linearize_params)
         else:
             mus = np.zeros(1)
 
@@ -142,6 +144,7 @@ DRIFT_UNITS = r'$\mu$m/s'
 ENTROPY_UNITS = r'J $\cdot$ K$^{-1}$'
 INFORMATION_UNITS = 'bits'
 LIGAND_UNITS = 'mM'
+FIGSIZE = np.array([6.4, 4.8])
 
 
 def set_up_methylation_levels_and_ligand_concentrations(m_min: float = METHYLATION_MIN,
@@ -274,17 +277,18 @@ def plot_output(output: np.ndarray,
     """
     log_c = np.log10(c)
 
-    plt.contourf(log_c, m, output, levels=LEVELS, cmap=CMAP)
-    plt.colorbar()
+    fig, ax = plt.subplots(figsize=FIGSIZE * 1.1)
+    im = ax.contourf(log_c, m, output, levels=LEVELS, cmap=CMAP)
+    fig.colorbar(im, ax=ax)
 
     if plot_max:
         maxi = np.argmax(output, axis=0)  # Index in each column corresponding to maximum
-        plt.plot(log_c[0], m[maxi, 0], color='red', label='max')
-        plt.legend(loc='upper left')
+        ax.plot(log_c[0], m[maxi, 0], color='red', label='max')
+        ax.legend(loc='upper left')
 
-    plt.title(title)
-    plt.xlabel(r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})')
-    plt.ylabel('Methylation level $m$')
+    ax.set_title(title)
+    ax.set_xlabel(r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})')
+    ax.set_ylabel('Methylation level $m$')
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -664,10 +668,12 @@ def plot_information_and_output(infos: List[float],
     :param units: Units of the output type.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
-    plt.plot(infos, avg_outs, 'x')
-    plt.title(f'{output_type} vs Mutual Information')
-    plt.ylabel(f'{output_type} ({units})')
-    plt.xlabel(f'Mutual Information ({INFORMATION_UNITS})')
+    fig, ax = plt.subplots(figsize=FIGSIZE * 1.1)
+
+    ax.plot(infos, avg_outs, 'x')
+    ax.set_title(f'{output_type} vs Mutual Information')
+    ax.set_ylabel(f'{output_type} ({units})')
+    ax.set_xlabel(f'Mutual Information ({INFORMATION_UNITS})')
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -771,7 +777,7 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
     log_c = np.log10(c)
     sqrt_size = int(np.ceil(np.sqrt(len(parameters))))  # Number of rows/columns in a square that can hold all the plots
 
-    fig, axes = plt.subplots(nrows=sqrt_size, ncols=sqrt_size, figsize=sqrt_size * np.array([6.4, 4.8]) * 1.0)
+    fig, axes = plt.subplots(nrows=sqrt_size, ncols=sqrt_size, figsize=sqrt_size * FIGSIZE * 1.1)
     axes = [axes] if sqrt_size == 1 else axes.flat
 
     for ax, distribution, parameter, info, avg_out, std_out in tqdm(zip(axes, distributions, parameters,
@@ -833,7 +839,7 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
     size = lam_grid.size
     sqrt_size = np.sqrt(size)
 
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=sqrt_size * np.array([6.4, 4.8]) * 1.0)
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=sqrt_size * FIGSIZE * 1.2)
 
     # Ensure axes is a 2d array
     if size == 1:
@@ -849,7 +855,7 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
         im = ax.contourf(log_c, m, distribution_grid[i, j], levels=LEVELS, cmap=CMAP)
         fig.colorbar(im, ax=ax)
         ax.set_title((f'I$=${info_grid[i, j]:.2e} {INFORMATION_UNITS}, ' if info_grid is not None else '') +
-                     (f'V$=${avg_plus_minus_std_string(avg_drift_grid[i, j], std_drift_grid[i, j])} {DRIFT_UNITS}, '
+                     (f'V$=${avg_plus_minus_std_string(avg_drift_grid[i, j], std_drift_grid[i, j])} {DRIFT_UNITS},\n'
                       if avg_drift_grid is not None and std_drift_grid is not None else '') +
                      (f'S$=${avg_plus_minus_std_string(avg_entropy_grid[i, j], std_entropy_grid[i, j])} {ENTROPY_UNITS}'
                       if avg_entropy_grid is not None and std_entropy_grid is not None else ''))
