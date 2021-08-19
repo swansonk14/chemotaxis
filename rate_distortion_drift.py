@@ -28,9 +28,9 @@ from tqdm import tqdm
 class Args(Tap):
     outputs: Set[Literal['drift', 'entropy']] = {'drift', 'entropy'}
     """The outputs to optimize for when minimizing entropy. Drift is maximized while entropy is minimized."""
-    num_iters: int = 100
+    num_iters: int = 200
     """Maximum number of iterations of the algorithm."""
-    lambda_min: float = -1.0
+    lambda_min: float = 0.0
     """Minimum value of Lagrangian lambda for drift in log space (i.e., min lambda = 10^{lambda_min})."""
     lambda_max: float = 3.0
     """Maximum value of Lagrangian lambda for drift in log space (i.e., min lambda = 10^{lambda_max})."""
@@ -359,12 +359,17 @@ def plot_values_across_iterations(infos: List[float],
     :param mu: The Lagrangian mu for entropy.
     :param save_path: Path where the plot will be saved (if None, displayed instead).
     """
+    s = 3
     fig, axes = plt.subplots(4, 1, sharex=True)
 
-    axes[0].scatter(np.arange(len(infos)), infos, color='red', label='information', s=3)
-    axes[1].scatter(np.arange(len(avg_drifts)), avg_drifts, color='blue', label='drift', s=3)
-    axes[2].scatter(np.arange(len(avg_entropies)), avg_entropies, color='purple', label='entropy', s=3)
-    axes[3].scatter(np.arange(len(objectives)), objectives, color='green', label='objective', s=3)
+    axes[0].scatter(np.arange(len(infos)), infos,
+                    color='red', label=f'Information ({INFORMATION_UNITS})', s=s)
+    axes[1].scatter(np.arange(len(avg_drifts)), avg_drifts,
+                    color='blue', label=f'Drift ({DRIFT_UNITS})', s=s)
+    axes[2].scatter(np.arange(len(avg_entropies)), avg_entropies,
+                    color='purple', label=f'Entropy ({ENTROPY_UNITS})', s=s)
+    axes[3].scatter(np.arange(len(objectives)), objectives,
+                    color='green', label=f'Objective', s=s)
 
     for ax in axes:
         ax.legend()
@@ -493,6 +498,7 @@ def determine_information_and_output(drift: np.ndarray,
                - Pm (np.ndarray): the marginal distributions P(m)
     """
     if save_dir is not None:
+        save_dir = save_dir / 'convergence'
         save_dir.mkdir(parents=True, exist_ok=True)
 
     # Keep track of values across iterations (if verbosity >= 2)
