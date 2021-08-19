@@ -496,8 +496,8 @@ def determine_information_and_output(drift: np.ndarray,
     # Normalize P(m)
     Pm = Pm / integrate(Pm, m, axis=0)
 
-    # Precompute exp(lam * drift - mu * entropy)
-    exp_output = np.exp(lam * drift - mu * entropy)
+    # Precompute 2^(lam * drift - mu * entropy)
+    exp_output = np.power(2, lam * drift - mu * entropy)
 
     # Initial guess for conditional distribution P(m | c) over methylation levels given ligand concentrations
     Pmc = compute_Pmc(Pm=Pm, m=m, exp_output=exp_output)
