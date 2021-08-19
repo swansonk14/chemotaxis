@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import List, Literal, Set, Tuple
 
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 from scipy.integrate import trapezoid as integrate
 from tap import Tap
@@ -683,24 +684,18 @@ def plot_information_and_output(infos: List[float],
     plt.close()
 
 
-def plot_information_and_outputs_3d(info_grid: np.ndarray,
-                                    avg_drift_grid: np.ndarray,
-                                    avg_entropy_grid: np.ndarray,
-                                    save_dir: Path = None) -> None:
+def plot_information_and_outputs_3d_on_axis(ax: Axes3D,
+                                            info_grid: np.ndarray,
+                                            avg_drift_grid: np.ndarray,
+                                            avg_entropy_grid: np.ndarray) -> None:
     """
-    Plot the (maximum) average drift vs the (minimum) average entropy vs the (minimum) mutual information.
+    Plot the (maximum) average drift vs the (minimum) average entropy vs the (minimum) mutual information on an axis.
 
+    :param ax: A 3D axis object on which the plot will be created.
     :param info_grid: A matrix of mutual information values for different lambda and mu values.
     :param avg_drift_grid: A matrix of average drift values for different lambda and mu values.
     :param avg_entropy_grid: A matrix of average entropy values for different lambda and mu values.
-    :param save_dir: Path to directory where the plots will be saved (if None, displayed instead).
     """
-    if save_dir is not None:
-        save_dir.mkdir(parents=True, exist_ok=True)
-
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-
     # Numbers from low mu to high mu (connected by a line)
     # Blue to green from low lambda to high lambda
     for i, (info_row, avg_drift_row, avg_entropy_row) in enumerate(zip(info_grid, avg_drift_grid, avg_entropy_grid)):
@@ -715,12 +710,44 @@ def plot_information_and_outputs_3d(info_grid: np.ndarray,
     ax.set_zlabel(f'Entropy ({ENTROPY_UNITS})')
     ax.set_title('Drift vs Entropy vs Mutual Information')
 
-    if save_dir is not None:
-        base_azim = ax.azim
-        for angle in range(0, 360, 30):
-            ax.azim = base_azim + angle
-            plt.savefig(save_dir / f'{str(angle).zfill(3)}.png', dpi=DPI)
+
+def plot_information_and_outputs_3d(info_grid: np.ndarray,
+                                    avg_drift_grid: np.ndarray,
+                                    avg_entropy_grid: np.ndarray,
+                                    save_path: Path = None) -> None:
+    """
+    Plot the (maximum) average drift vs the (minimum) average entropy vs the (minimum) mutual information.
+
+    :param info_grid: A matrix of mutual information values for different lambda and mu values.
+    :param avg_drift_grid: A matrix of average drift values for different lambda and mu values.
+    :param avg_entropy_grid: A matrix of average entropy values for different lambda and mu values.
+    :param save_path: Path where the plots will be saved (if None, displayed instead).
+    """
+    if save_path is not None:
+        fig = plt.figure(figsize=FIGSIZE * 3)
+        num_rows = num_cols = 3
+        num_images = num_rows * num_cols
+        for index, angle in enumerate(range(0, 360, 360 // num_images)):
+            ax = fig.add_subplot(num_rows, num_cols, index + 1, projection='3d')
+            ax.view_init(azim=ax.azim + angle)
+            plot_information_and_outputs_3d_on_axis(
+                ax=ax,
+                info_grid=info_grid,
+                avg_drift_grid=avg_drift_grid,
+                avg_entropy_grid=avg_entropy_grid
+            )
+
+        plt.savefig(save_path, dpi=DPI)
     else:
+        fig = plt.figure()
+        ax = fig.add_subplot(projection='3d')
+        breakpoint()
+        plot_information_and_outputs_3d_on_axis(
+            ax=ax,
+            info_grid=info_grid,
+            avg_drift_grid=avg_drift_grid,
+            avg_entropy_grid=avg_entropy_grid
+        )
         plt.show()
 
     plt.close()
@@ -971,7 +998,7 @@ def run_simulation(args: Args) -> None:
             info_grid=info_grid,
             avg_drift_grid=avg_drift_grid,
             avg_entropy_grid=avg_entropy_grid,
-            save_dir=args.save_dir / 'drift_vs_entropy_vs_information' if args.save_dir is not None else None
+            save_path=args.save_dir / 'drift_vs_entropy_vs_information.png' if args.save_dir is not None else None
         )
 
         # Set up distribution plotting function across Lagrangian values
