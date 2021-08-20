@@ -12,7 +12,9 @@ from tqdm import tqdm, trange
 
 from rate_distortion_drift import (
     CMAP,
+    DPI,
     DRIFT_UNITS,
+    FIGSIZE,
     LIGAND_UNITS,
     METHYLATION_MAX,
     METHYLATION_MIN,
@@ -34,12 +36,18 @@ X_FOR_MAX_METH = 14.4
 class Args(Tap):
     data_path: Path
     """Path to a file containing the output from a RapidCell simulation."""
-    color_gradient: Literal['time', 'orientation', 'CheA-P', 'CheY-P', 'methylation', 'CCW_bias', 'drift'] = 'time'
-    """The parameter to use to determine the color gradient."""
+    color_gradients: List[Literal['time', 'orientation', 'CheA-P', 'CheY-P', 'methylation', 'CCW_bias', 'drift']] = ['time']
+    """The parameter(s) to use to determine the color gradient."""
     polyfit: bool = False
     """Whether to fit a polynomial to the ligand-methylation data."""
     poly_degree: int = 7
     """Degree of the polynomial to fit to the ligand-methylation data."""
+    save_dir: Path = None
+    """Path to directory where plots will be saved. If None, plots are displayed instead."""
+
+    def process_args(self) -> None:
+        if self.save_dir is not None:
+            self.save_dir.mkdir(parents=True, exist_ok=True)
 
 
 def log_ligand_concentration(x: Union[float, np.ndarray], rate: float = 0.001) -> Union[float, np.ndarray]:
@@ -93,15 +101,17 @@ def load_data(path: Path) -> List[Dict[str, np.ndarray]]:
 
 
 def plot_cell_paths(data: List[Dict[str, np.ndarray]],
-                    color_gradient: str) -> None:
+                    color_gradient: str,
+                    save_path: Path = None) -> None:
     """
     Plots the paths of the cells in the simulation.
 
     :param data: A list of dictionaries containing data for each cell in the simulation.
     :param color_gradient: The parameter to use to determine the color gradient.
+    :param save_path: Path where plot will be saved. If None, plot is displayed instead.
     """
     # Plot cell movements
-    fig, ax1 = plt.subplots()
+    fig, ax1 = plt.subplots(figsize=FIGSIZE * 1.5)
 
     # Get min and max for color gradient normalization
     color_data = [c for cell_data in data for c in cell_data[color_gradient]]
@@ -137,7 +147,11 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
     ax2.spines['top'].set_color('red')
     ax2.set_xlim(log_ligand_concentration(X_MIN), log_ligand_concentration(X_MAX))
 
-    plt.show()
+    if save_path is not None:
+        plt.savefig(save_path, dpi=DPI)
+    else:
+        plt.show()
+
     plt.close()
 
 
@@ -247,7 +261,8 @@ def plot_ligand_methylation_distribution(Pmc: np.ndarray,
                                          log_c: np.ndarray,
                                          m: np.ndarray,
                                          info: float = None,
-                                         polynomial: Polynomial = None) -> None:
+                                         polynomial: Polynomial = None,
+                                         save_path: Path = None) -> None:
     """
     Plots the distribution of methylation levels given ligand concentrations.
 
@@ -256,6 +271,7 @@ def plot_ligand_methylation_distribution(Pmc: np.ndarray,
     :param m: A matrix of methylation levels (differing across the rows).
     :param info: Mutual information of Pmc.
     :param polynomial: A Polynomial that has been fit to the P(m|c) data.
+    :param save_path: Path where plot will be saved. If None, plot is displayed instead.
     """
     if polynomial is not None:
         log_ci = log_c[0]
@@ -271,11 +287,19 @@ def plot_ligand_methylation_distribution(Pmc: np.ndarray,
     plt.title('$P(m|c)$')
     plt.xlabel(r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})')
     plt.ylabel('Methylation level $m$')
-    plt.show()
+
+    if save_path is not None:
+        plt.savefig(save_path, dpi=DPI)
+    else:
+        plt.show()
 
 
 def plot_cell_simulation(args: Args) -> None:
     """Plots the movement of cells in a RapidCell simulation."""
+    # Save arguments
+    if args.save_dir is not None:
+        args.save(args.save_dir / 'args.json')
+
     # Load data
     data = load_data(path=args.data_path)
 
@@ -285,7 +309,12 @@ def plot_cell_simulation(args: Args) -> None:
         cell_data['ligand'] = log_ligand_concentration(cell_data['x'])
 
     # Plot cell paths
-    plot_cell_paths(data=data, color_gradient=args.color_gradient)
+    for color_gradient in args.color_gradients:
+        plot_cell_paths(
+            data=data,
+            color_gradient=color_gradient,
+            save_path=args.save_dir / f'cell_paths_{color_gradient}.png' if args.save_dir is not None else None
+        )
 
     # Set up methylation levels m and ligand concentrations
     m, c = set_up_methylation_levels_and_ligand_concentrations(
@@ -318,13 +347,32 @@ def plot_cell_simulation(args: Args) -> None:
         polynomial = None
 
     # Plot P(m|c) including optional polynomial fit
-    plot_ligand_methylation_distribution(Pmc=Pmc, log_c=log_c, m=m, info=info, polynomial=polynomial)
+    plot_ligand_methylation_distribution(
+        Pmc=Pmc,
+        log_c=log_c,
+        m=m,
+        info=info,
+        polynomial=polynomial,
+        save_path=args.save_dir / 'pmc.png' if args.save_dir is not None else None
+    )
 
     # Plot P(c)
-    plot_output(output=Pc, title='$P(c)$', c=c, m=m)
+    plot_output(
+        output=Pc,
+        title='$P(c)$',
+        c=c,
+        m=m,
+        save_path=args.save_dir / 'pc.png' if args.save_dir is not None else None
+    )
 
     # Plot P(m)
-    plot_output(output=Pm, title='$P(m)$', c=c, m=m)
+    plot_output(
+        output=Pm,
+        title='$P(m)$',
+        c=c,
+        m=m,
+        save_path=args.save_dir / 'pm.png' if args.save_dir is not None else None
+    )
 
 
 if __name__ == '__main__':
