@@ -159,6 +159,63 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
     plt.close()
 
 
+def plot_drift(data: List[Dict[str, np.ndarray]],
+               num_bins: int = 1000,
+               min_count: int = 10,
+               save_path: Path = None) -> None:
+    """
+    Plots the average drift of the cells across different bins.
+
+    :param data: A list of dictionaries containing data for each cell in the simulation.
+    :param num_bins: Number of bins to divide the x range into.
+    :param min_count: Minimum number of counts in each bin to display its average drift.
+    :param save_path: Path where plot will be saved. If None, plot is displayed instead.
+    """
+    # Set up x range bins
+    bins = np.linspace(X_MIN, X_MAX, num_bins + 1)
+    bin_size = (X_MAX - X_MIN) / num_bins
+    bin_centers = bins[:-1] + bin_size / 2
+    drift_sums = np.zeros(num_bins)
+    drift_counts = np.zeros(num_bins)
+
+    # Iterate over individual cells
+    for cell_data in tqdm(data):
+        current_bin = max(0, np.searchsorted(bins, cell_data['x'][0]) - 1)
+        start_time = None
+
+        for x, time in zip(cell_data['x'], cell_data['time']):
+            bin = max(0, np.searchsorted(bins, x) - 1)
+
+            if bin != current_bin:
+                # Don't count first crossing of bin boundary since cell starts in the middle of a bin
+                if start_time is not None:
+                    if bin == current_bin + 1:
+                        drift_sums[bin] += bin_size / (time - start_time)
+                    elif bin == current_bin - 1:
+                        drift_sums[bin] -= bin_size / (time - start_time)
+                    else:
+                        raise ValueError('Skipped more than one bin in one time step.')
+
+                    drift_counts[bin] += 1
+
+                current_bin = bin
+                start_time = time
+
+    drift_averages = drift_sums / (drift_counts + (drift_counts == 0))  # mask to ensure no divide by zero error
+    drift_averages *= 1000  # Convert from mm/s to um/s
+
+    fig, ax = plt.subplots(figsize=FIGSIZE * 1.2)
+    ax.scatter(bin_centers[drift_counts >= min_count], drift_averages[drift_counts >= min_count], s=10)
+    ax.set_xlabel('X bin')
+    ax.set_ylabel(f'Drift ({DRIFT_UNITS})')
+    ax.set_title('Average drift across X bins')
+
+    if save_path is not None:
+        plt.savefig(save_path, dpi=DPI)
+    else:
+        plt.show()
+
+
 def poly_str(poly: Polynomial) -> str:
     """
     Converts a polynomial into a LaTeX string.
@@ -320,6 +377,12 @@ def plot_cell_simulation(args: Args) -> None:
             color_gradient=color_gradient,
             save_path=args.save_dir / f'cell_paths_{color_gradient}.png' if args.save_dir is not None else None
         )
+
+    # Plot drift
+    plot_drift(
+        data=data,
+        save_path=args.save_dir / 'drift.png' if args.save_dir is not None else None
+    )
 
     # Set up methylation levels m and ligand concentrations
     m, c = set_up_methylation_levels_and_ligand_concentrations(
