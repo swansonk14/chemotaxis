@@ -129,6 +129,10 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
         lc.set_linewidth(2)
         ax1.add_collection(lc)
 
+        # Plot start and end
+        ax1.scatter(cell_data['x'][0], cell_data['y'][0], color='red', marker='o', s=15, zorder=2)
+        ax1.scatter(cell_data['x'][-1], cell_data['y'][-1], color='red', marker='s', s=15, zorder=2)
+
         # Add drift at final location
         drift = (cell_data['x'][-1] - cell_data['x'][0]) / (cell_data['time'][-1] - cell_data['time'][0])
         ax1.text(cell_data['x'][-1], cell_data['y'][-1], rf'{1000 * drift:.2f} {DRIFT_UNITS}', color='b')
@@ -280,13 +284,14 @@ def plot_ligand_methylation_distribution(Pmc: np.ndarray,
         first_index_before_8 = max(0, indices_over_8[0] - 1) if len(indices_over_8) > 0 else None
         plt.plot(log_ci[:first_index_before_8], y_fit[:first_index_before_8], color='red', label=poly_str(polynomial))
 
-    plt.contourf(log_c, m, Pmc, levels=64, cmap=plt.get_cmap('viridis'))
-    plt.scatter([], [], s=3, color='cyan', label=f'Mutual information = {info:.2f}')
-    plt.legend()
-    plt.colorbar()
-    plt.title('$P(m|c)$')
-    plt.xlabel(r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})')
-    plt.ylabel('Methylation level $m$')
+    fig, ax = plt.subplots(figsize=FIGSIZE * 1.2)
+    ax.scatter([], [], s=3, color='cyan', label=f'Mutual information = {info:.2f}')
+    im = ax.contourf(log_c, m, Pmc, levels=64, cmap=plt.get_cmap('viridis'))
+    fig.colorbar(im, ax=ax)
+    ax.legend()
+    ax.set_title('$P(m|c)$')
+    ax.set_xlabel(r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})')
+    ax.set_ylabel('Methylation level $m$')
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
