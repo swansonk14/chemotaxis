@@ -131,11 +131,7 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
 
         # Plot start and end
         ax1.scatter(cell_data['x'][0], cell_data['y'][0], color='red', marker='o', s=15, zorder=2)
-        ax1.scatter(cell_data['x'][-1], cell_data['y'][-1], color='red', marker='s', s=15, zorder=2)
-
-        # Add drift at final location
-        drift = (cell_data['x'][-1] - cell_data['x'][0]) / (cell_data['time'][-1] - cell_data['time'][0])
-        ax1.text(cell_data['x'][-1], cell_data['y'][-1], rf'{1000 * drift:.2f} {DRIFT_UNITS}', color='b')
+        ax1.scatter(cell_data['x'][-1], cell_data['y'][-1], color='red', marker='x', s=15, zorder=2)
 
     cbar = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=CMAP), ax=ax1)
     cbar.set_label(color_gradient)
@@ -150,6 +146,16 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
     ax2.tick_params(axis='x', colors='red')
     ax2.spines['top'].set_color('red')
     ax2.set_xlim(log_ligand_concentration(X_MIN), log_ligand_concentration(X_MAX))
+
+    # Average drift
+    avg_drift = np.mean([(cell_data['x'][-1] - cell_data['x'][0]) / cell_data['time'][-1] for cell_data in data])
+    ax1.scatter([], [], s=3, color='purple', label=f'Average drift = {1000 * avg_drift:.2f} {DRIFT_UNITS}')
+
+    # Average log(c)
+    avg_log_c = np.mean([concentration for cell_data in data for concentration in cell_data['ligand']])
+    ax1.scatter([], [], s=3, color='purple', label=r'Average $\log_{10}$(c) = ' + f'{avg_log_c:.2f} {LIGAND_UNITS}')
+
+    ax1.legend(loc='upper left')
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -345,7 +351,7 @@ def plot_ligand_methylation_distribution(Pmc: np.ndarray,
     ax.scatter([], [], s=3, color='cyan', label=f'Mutual information = {info:.2f}')
     im = ax.contourf(log_c, m, Pmc, levels=64, cmap=plt.get_cmap('viridis'))
     fig.colorbar(im, ax=ax)
-    ax.legend()
+    ax.legend(loc='upper left')
     ax.set_title('$P(m|c)$')
     ax.set_xlabel(r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})')
     ax.set_ylabel('Methylation level $m$')
