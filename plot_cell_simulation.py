@@ -213,8 +213,8 @@ def plot_drift(data: List[Dict[str, np.ndarray]],
     fig, ax = plt.subplots(figsize=FIGSIZE * 1.2)
     ax.scatter(bin_centers[drift_counts >= min_count], drift_averages[drift_counts >= min_count], s=10)
     ax.set_xlabel('X bin')
-    ax.set_ylabel(f'Drift ({DRIFT_UNITS})')
-    ax.set_title('Average drift across X bins')
+    ax.set_ylabel(f'Average drift ({DRIFT_UNITS})')
+    ax.set_title('Average drift across bins')
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
