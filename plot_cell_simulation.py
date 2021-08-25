@@ -15,11 +15,13 @@ from rate_distortion_drift import (
     DPI,
     DRIFT_UNITS,
     FIGSIZE,
+    INFORMATION_UNITS,
     LIGAND_UNITS,
     METHYLATION_MAX,
     METHYLATION_MIN,
     compute_mutual_information,
     plot_output,
+    set_plot_parameters,
     set_up_methylation_levels_and_ligand_concentrations
 )
 
@@ -125,6 +127,7 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
 
         # Plot line segments
         lc = LineCollection(segments, norm=norm, cmap=CMAP)
+        lc.set_rasterized(True)
         lc.set_array(cell_data[color_gradient])
         lc.set_linewidth(2)
         ax1.add_collection(lc)
@@ -340,15 +343,16 @@ def plot_ligand_methylation_distribution(Pmc: np.ndarray,
     :param polynomial: A Polynomial that has been fit to the P(m|c) data.
     :param save_path: Path where plot will be saved. If None, plot is displayed instead.
     """
+    fig, ax = plt.subplots(figsize=FIGSIZE * 1.2)
+
     if polynomial is not None:
         log_ci = log_c[0]
         y_fit = polynomial(log_ci)
         indices_over_8 = np.where(y_fit > 8.0)[0]
         first_index_before_8 = max(0, indices_over_8[0] - 1) if len(indices_over_8) > 0 else None
-        plt.plot(log_ci[:first_index_before_8], y_fit[:first_index_before_8], color='red', label=poly_str(polynomial))
+        ax.plot(log_ci[:first_index_before_8], y_fit[:first_index_before_8], color='red', label=poly_str(polynomial))
 
-    fig, ax = plt.subplots(figsize=FIGSIZE * 1.2)
-    ax.scatter([], [], s=3, color='cyan', label=f'Mutual information = {info:.2f}')
+    ax.scatter([], [], s=3, color='cyan', label=f'Mutual information = {info:.2f} {INFORMATION_UNITS}')
     im = ax.contourf(log_c, m, Pmc, levels=64, cmap=plt.get_cmap('viridis'))
     fig.colorbar(im, ax=ax)
     ax.legend(loc='upper left')
@@ -364,6 +368,9 @@ def plot_ligand_methylation_distribution(Pmc: np.ndarray,
 
 def plot_cell_simulation(args: Args) -> None:
     """Plots the movement of cells in a RapidCell simulation."""
+    # Set plot parameters
+    set_plot_parameters()
+
     # Save arguments
     if args.save_dir is not None:
         args.save(args.save_dir / 'args.json')
@@ -381,13 +388,13 @@ def plot_cell_simulation(args: Args) -> None:
         plot_cell_paths(
             data=data,
             color_gradient=color_gradient,
-            save_path=args.save_dir / f'cell_paths_{color_gradient}.png' if args.save_dir is not None else None
+            save_path=args.save_dir / f'cell_paths_{color_gradient}.pdf' if args.save_dir is not None else None
         )
 
     # Plot drift
     plot_drift(
         data=data,
-        save_path=args.save_dir / 'drift.png' if args.save_dir is not None else None
+        save_path=args.save_dir / 'drift.pdf' if args.save_dir is not None else None
     )
 
     # Set up methylation levels m and ligand concentrations
@@ -427,7 +434,7 @@ def plot_cell_simulation(args: Args) -> None:
         m=m,
         info=info,
         polynomial=polynomial,
-        save_path=args.save_dir / 'pmc.png' if args.save_dir is not None else None
+        save_path=args.save_dir / 'pmc.pdf' if args.save_dir is not None else None
     )
 
     # Plot P(c)
@@ -436,7 +443,7 @@ def plot_cell_simulation(args: Args) -> None:
         title='$P(c)$',
         c=c,
         m=m,
-        save_path=args.save_dir / 'pc.png' if args.save_dir is not None else None
+        save_path=args.save_dir / 'pc.pdf' if args.save_dir is not None else None
     )
 
     # Plot P(m)
@@ -445,7 +452,7 @@ def plot_cell_simulation(args: Args) -> None:
         title='$P(m)$',
         c=c,
         m=m,
-        save_path=args.save_dir / 'pm.png' if args.save_dir is not None else None
+        save_path=args.save_dir / 'pm.pdf' if args.save_dir is not None else None
     )
 
 

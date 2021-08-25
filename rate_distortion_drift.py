@@ -148,6 +148,16 @@ LIGAND_UNITS = 'mM'
 FIGSIZE = np.array([6.4, 4.8])
 
 
+def set_plot_parameters() -> None:
+    """Sets matplotlib plot parameters."""
+    # Plotting constants
+    plt.rc('axes', titlesize=24)  # fontsize of the axes title
+    plt.rc('axes', labelsize=18)  # fontsize of the x and y labels
+    plt.rc('xtick', labelsize=12)  # fontsize of the tick labels
+    plt.rc('ytick', labelsize=12)  # fontsize of the tick labels
+    plt.rc('legend', fontsize=14)  # legend fontsize
+
+
 def set_up_methylation_levels_and_ligand_concentrations(m_min: float = METHYLATION_MIN,
                                                         m_max: float = METHYLATION_MAX,
                                                         m_num: int = 1000,
@@ -279,7 +289,8 @@ def plot_output(output: np.ndarray,
     log_c = np.log10(c)
 
     fig, ax = plt.subplots(figsize=FIGSIZE * 1.2)
-    im = ax.contourf(log_c, m, output, levels=LEVELS, cmap=CMAP)
+    im = ax.contourf(log_c, m, output, levels=LEVELS, cmap=CMAP, zorder=-20)
+    ax.set_rasterization_zorder(-10)
     fig.colorbar(im, ax=ax)
 
     if plot_max:
@@ -550,7 +561,7 @@ def determine_information_and_output(drift: np.ndarray,
             objectives=objectives,
             lam=lam,
             mu=mu,
-            save_path=save_dir / f'convergence_lambda={lam:.2e}_mu={mu:.2e}.png' if save_dir is not None else None
+            save_path=save_dir / f'convergence_lambda={lam:.2e}_mu={mu:.2e}.pdf' if save_dir is not None else None
         )
 
     # Compute the minimum mutual information (Taylor equation 1)
@@ -786,6 +797,7 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
                                          save_path: Path = None) -> None:
     """
     Plots the distributions over methylation levels and ligand concentrations across parameter values.
+
     :param distributions: An array of probability distributions over methylation levels
                           and ligand concentrations across parameter values.
     :param c: A matrix of ligand concentrations (differing across the columns).
@@ -809,17 +821,20 @@ def plot_distributions_across_parameters(distributions: np.ndarray,
     for ax, distribution, parameter, info, avg_out, std_out in tqdm(zip(axes, distributions, parameters,
                                                                         infos, avg_outs, std_outs),
                                                                     total=len(parameters)):
-        im = ax.contourf(log_c, m, distribution, levels=LEVELS, cmap=CMAP)
-        fig.colorbar(im, ax=ax)
-        ax.title.set_text(f'{parameter_name}$=${parameter:.2e}, '
-                          f'I$=${info:.2e} {INFORMATION_UNITS},\n'
-                          rf'{output_type}$=${avg_plus_minus_std_string(avg_out, std_out)} {units}')
+        im = ax.contourf(log_c, m, distribution, levels=LEVELS, cmap=CMAP, zorder=-20)
+        ax.set_rasterization_zorder(-10)
 
-    fig.suptitle(title, fontsize=10 * sqrt_size)
+        fig.colorbar(im, ax=ax)
+        ax.set_title(f'{parameter_name}$=${parameter:.2e}, '
+                     f'I$=${info:.2e} {INFORMATION_UNITS},\n'
+                     rf'{output_type}$=${avg_plus_minus_std_string(avg_out, std_out)} {units}',
+                     fontsize=5 * sqrt_size)
+
+    fig.suptitle(title, fontsize=20 * sqrt_size)
     fig.text(0.04, 0.5, 'Methylation level $m$',
-             va='center', rotation='vertical', fontsize=7 * sqrt_size)  # y label
+             va='center', rotation='vertical', fontsize=18 * sqrt_size)  # y label
     fig.text(0.5, 0.04, r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})',
-             ha='center', fontsize=7 * sqrt_size)  # x label
+             ha='center', fontsize=18 * sqrt_size)  # x label
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
@@ -878,7 +893,9 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
     # Plot distributions
     for i, j in tqdm(product(range(nrows), range(ncols)), total=size):
         ax = axes[i, j]
-        im = ax.contourf(log_c, m, distribution_grid[i, j], levels=LEVELS, cmap=CMAP)
+        im = ax.contourf(log_c, m, distribution_grid[i, j], levels=LEVELS, cmap=CMAP, zorder=-20)
+        ax.set_rasterization_zorder(-10)
+
         fig.colorbar(im, ax=ax)
         ax.set_title((f'I$=${info_grid[i, j]:.2e} {INFORMATION_UNITS}, ' if info_grid is not None else '') +
                      (f'V$=${avg_plus_minus_std_string(avg_drift_grid[i, j], std_drift_grid[i, j])} {DRIFT_UNITS},\n'
@@ -913,6 +930,9 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
 
 def run_simulation(args: Args) -> None:
     """Runs the rate distortion simulation."""
+    # Set plot parameters
+    set_plot_parameters()
+
     # Save arguments
     if args.save_dir is not None:
         args.save(args.save_dir / 'args.json')
@@ -935,7 +955,7 @@ def run_simulation(args: Args) -> None:
                 c=c,
                 m=m,
                 plot_max=True,
-                save_path=args.save_dir / 'drift.png' if args.save_dir is not None else None
+                save_path=args.save_dir / 'drift.pdf' if args.save_dir is not None else None
             )
 
         elif args.outputs == {'entropy'}:
@@ -945,7 +965,7 @@ def run_simulation(args: Args) -> None:
                 c=c,
                 m=m,
                 plot_max=True,
-                save_path=args.save_dir / 'entropy.png' if args.save_dir is not None else None
+                save_path=args.save_dir / 'entropy.pdf' if args.save_dir is not None else None
             )
 
         elif args.outputs == {'drift', 'entropy'}:
@@ -959,7 +979,7 @@ def run_simulation(args: Args) -> None:
                 mu_grid=mu_grid,
                 title=r'$\lambda \cdot$ drift $-\ \mu \cdot$ entropy',
                 plot_max=True,
-                save_path=args.save_dir / 'drift-entropy.png' if args.save_dir is not None else None
+                save_path=args.save_dir / 'drift-entropy.pdf' if args.save_dir is not None else None
             )
 
     # Set up marginal distribution over ligand concentrations P(c)
@@ -972,7 +992,7 @@ def run_simulation(args: Args) -> None:
             title='$P(c)$',
             c=c,
             m=m,
-            save_path=args.save_dir / 'pc.png' if args.save_dir is not None else None
+            save_path=args.save_dir / 'pc.pdf' if args.save_dir is not None else None
         )
 
     # Determine minimum mutual information and maximum mean output for multiple parameter values
@@ -997,7 +1017,7 @@ def run_simulation(args: Args) -> None:
             info_grid=info_grid,
             avg_drift_grid=avg_drift_grid,
             avg_entropy_grid=avg_entropy_grid,
-            save_path=args.save_dir / 'drift_vs_entropy_vs_information.png' if args.save_dir is not None else None
+            save_path=args.save_dir / 'drift_vs_entropy_vs_information.pdf' if args.save_dir is not None else None
         )
 
         # Set up distribution plotting function across Lagrangian values
@@ -1018,7 +1038,7 @@ def run_simulation(args: Args) -> None:
         plot_dist_fn(
             distribution_grid=Pmc_grid,
             title='Conditional distribution $P(m|c)$',
-            save_path=args.save_dir / 'pmc.png' if args.save_dir is not None else None
+            save_path=args.save_dir / 'pmc.pdf' if args.save_dir is not None else None
         )
 
         # Plot marginal distribution across Lagrangian values
@@ -1026,7 +1046,7 @@ def run_simulation(args: Args) -> None:
             plot_dist_fn(
                 distribution_grid=Pm_grid,
                 title='Marginal distribution $P(m)$',
-                save_path=args.save_dir / 'pm.png' if args.save_dir is not None else None
+                save_path=args.save_dir / 'pm.pdf' if args.save_dir is not None else None
             )
     else:
         # Select output
@@ -1057,7 +1077,7 @@ def run_simulation(args: Args) -> None:
             avg_outs=avg_outs,
             output_type=output_type.title(),
             units=units,
-            save_path=args.save_dir / f'{output_type}_vs_information.png' if args.save_dir is not None else None
+            save_path=args.save_dir / f'{output_type}_vs_information.pdf' if args.save_dir is not None else None
         )
 
         # Set up distribution plotting function across Lagrangian values
@@ -1078,7 +1098,7 @@ def run_simulation(args: Args) -> None:
         plot_dist_fn(
             distributions=Pmcs,
             title='Conditional distribution $P(m|c)$',
-            save_path=args.save_dir / 'pmc.png' if args.save_dir is not None else None
+            save_path=args.save_dir / 'pmc.pdf' if args.save_dir is not None else None
         )
 
         # Plot marginal distribution across Lagrangian values
@@ -1086,7 +1106,7 @@ def run_simulation(args: Args) -> None:
             plot_dist_fn(
                 distributions=Pms,
                 title='Marginal distribution $P(m)$',
-                save_path=args.save_dir / 'pm.png' if args.save_dir is not None else None
+                save_path=args.save_dir / 'pm.pdf' if args.save_dir is not None else None
             )
 
 
