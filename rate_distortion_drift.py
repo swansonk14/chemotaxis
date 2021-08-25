@@ -716,10 +716,9 @@ def plot_information_and_outputs_3d_on_axis(ax: Axes3D,
         for j, (info, avg_drift, avg_entropy) in enumerate(zip(info_row, avg_drift_row, avg_entropy_row)):
             ax.text(info, avg_drift, avg_entropy, str(j + 1), color=color)
 
-    ax.set_xlabel(f'Mutual Information ({INFORMATION_UNITS})')
-    ax.set_ylabel(f'Drift ({DRIFT_UNITS})')
-    ax.set_zlabel(f'Entropy ({ENTROPY_UNITS})')
-    ax.set_title('Drift vs Entropy vs Mutual Information')
+    ax.set_xlabel(f'Mutual Information ({INFORMATION_UNITS})', fontsize=15)
+    ax.set_ylabel(f'Drift ({DRIFT_UNITS})', fontsize=15)
+    ax.set_zlabel(f'Entropy ({ENTROPY_UNITS})', fontsize=15)
 
 
 def plot_information_and_outputs_3d(info_grid: np.ndarray,
@@ -748,6 +747,7 @@ def plot_information_and_outputs_3d(info_grid: np.ndarray,
                 avg_entropy_grid=avg_entropy_grid
             )
 
+        fig.suptitle('Drift vs Entropy vs Mutual Information', fontsize=50)
         plt.savefig(save_path, dpi=DPI)
     else:
         fig = plt.figure()
@@ -758,6 +758,7 @@ def plot_information_and_outputs_3d(info_grid: np.ndarray,
             avg_drift_grid=avg_drift_grid,
             avg_entropy_grid=avg_entropy_grid
         )
+        plt.title('Drift vs Entropy vs Mutual Information')
         plt.show()
 
     plt.close()
@@ -901,7 +902,8 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
                      (f'V$=${avg_plus_minus_std_string(avg_drift_grid[i, j], std_drift_grid[i, j])} {DRIFT_UNITS},\n'
                       if avg_drift_grid is not None and std_drift_grid is not None else '') +
                      (f'S$=${avg_plus_minus_std_string(avg_entropy_grid[i, j], std_entropy_grid[i, j])} {ENTROPY_UNITS}'
-                      if avg_entropy_grid is not None and std_entropy_grid is not None else ''))
+                      if avg_entropy_grid is not None and std_entropy_grid is not None else ''),
+                     fontsize=5 * sqrt_size)
 
         if plot_max:
             maxi = np.argmax(distribution_grid[i, j], axis=0)  # Index in each column corresponding to maximum
@@ -914,11 +916,11 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
         if j == 0:
             ax.set_ylabel(rf'$\lambda=${lam_grid[i, j]:.2e}')
 
-    fig.suptitle(title, fontsize=10 * sqrt_size)
+    fig.suptitle(title, fontsize=20 * sqrt_size)
     fig.text(0.04, 0.5, 'Methylation level $m$',
-             va='center', rotation='vertical', fontsize=7 * sqrt_size)  # y label
+             va='center', rotation='vertical', fontsize=18 * sqrt_size)  # y label
     fig.text(0.5, 0.04, r'Ligand concentration $\log_{10}(c)$ ' + f'({LIGAND_UNITS})',
-             ha='center', fontsize=7 * sqrt_size)  # x label
+             ha='center', fontsize=18 * sqrt_size)  # x label
 
     if save_path is not None:
         plt.savefig(save_path, dpi=DPI)
