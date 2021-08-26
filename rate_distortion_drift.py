@@ -716,9 +716,9 @@ def plot_information_and_outputs_3d_on_axis(ax: Axes3D,
         for j, (info, avg_drift, avg_entropy) in enumerate(zip(info_row, avg_drift_row, avg_entropy_row)):
             ax.text(info, avg_drift, avg_entropy, str(j + 1), color=color)
 
-    ax.set_xlabel(f'Mutual Information ({INFORMATION_UNITS})', fontsize=15)
-    ax.set_ylabel(f'Drift ({DRIFT_UNITS})', fontsize=15)
-    ax.set_zlabel(f'Entropy ({ENTROPY_UNITS})', fontsize=15)
+    ax.set_xlabel(f'Mutual Information ({INFORMATION_UNITS})', fontsize=12)
+    ax.set_ylabel(f'Drift ({DRIFT_UNITS})', fontsize=12)
+    ax.set_zlabel(f'Entropy ({ENTROPY_UNITS})', fontsize=12)
 
 
 def plot_information_and_outputs_3d(info_grid: np.ndarray,
@@ -903,7 +903,7 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
                       if avg_drift_grid is not None and std_drift_grid is not None else '') +
                      (f'S$=${avg_plus_minus_std_string(avg_entropy_grid[i, j], std_entropy_grid[i, j])} {ENTROPY_UNITS}'
                       if avg_entropy_grid is not None and std_entropy_grid is not None else ''),
-                     fontsize=5 * sqrt_size)
+                     fontsize=15)
 
         if plot_max:
             maxi = np.argmax(distribution_grid[i, j], axis=0)  # Index in each column corresponding to maximum
@@ -911,10 +911,10 @@ def plot_distributions_across_parameter_grid(distribution_grid: np.ndarray,
             ax.legend(loc='upper left')
 
         if i == nrows - 1:
-            ax.set_xlabel(rf'$\mu=${mu_grid[i, j]:.2e}')
+            ax.set_xlabel(rf'$\mu=${mu_grid[i, j]:.2e}', fontsize=24 if sqrt_size <= 6 else 40)
 
         if j == 0:
-            ax.set_ylabel(rf'$\lambda=${lam_grid[i, j]:.2e}')
+            ax.set_ylabel(rf'$\lambda=${lam_grid[i, j]:.2e}', fontsize=24 if sqrt_size <= 6 else 40)
 
     fig.suptitle(title, fontsize=20 * sqrt_size)
     fig.text(0.04, 0.5, 'Methylation level $m$',

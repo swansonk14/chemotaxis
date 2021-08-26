@@ -137,7 +137,7 @@ def plot_cell_paths(data: List[Dict[str, np.ndarray]],
         ax1.scatter(cell_data['x'][-1], cell_data['y'][-1], color='red', marker='x', s=15, zorder=2)
 
     cbar = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=CMAP), ax=ax1)
-    cbar.set_label(color_gradient)
+    cbar.set_label(color_gradient.replace('_', ' '))
     ax1.set_xlim(X_MIN, X_MAX)
     ax1.set_ylim(Y_MIN, Y_MAX)
     ax1.set_xlabel('X position')
@@ -353,7 +353,8 @@ def plot_ligand_methylation_distribution(Pmc: np.ndarray,
         ax.plot(log_ci[:first_index_before_8], y_fit[:first_index_before_8], color='red', label=poly_str(polynomial))
 
     ax.scatter([], [], s=3, color='cyan', label=f'Mutual information = {info:.2f} {INFORMATION_UNITS}')
-    im = ax.contourf(log_c, m, Pmc, levels=64, cmap=plt.get_cmap('viridis'))
+    im = ax.contourf(log_c, m, Pmc, levels=64, cmap=plt.get_cmap('viridis'), zorder=-20)
+    ax.set_rasterization_zorder(-10)
     fig.colorbar(im, ax=ax)
     ax.legend(loc='upper left')
     ax.set_title('$P(m|c)$')
